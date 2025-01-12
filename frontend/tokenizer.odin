@@ -13,12 +13,21 @@ Token_Kind :: enum u32 {
   Newline,
   Left_Paren,
   Right_Paren,
+  Left_Brace,
+  Right_Brace,
 
+  // most likely math operators
+  Plus,
   Minus,
+  Star,
+  Slash,
 
   Int,
   Func,
   Arrow,
+
+  // control flow
+  Return,
 }
 
 
@@ -45,7 +54,7 @@ tokenize :: proc(t: ^Tokenizer) {
     t.prev = t.curr
     ch := t.src[t.curr]
     switch ch {
-      case ' ', '\t':
+      case ' ', '\t', '\r':
         t.curr += 1
       case 'a'..='z', 'A'..='Z':
         tokenizer_identier_or_keyword(t)
@@ -61,9 +70,18 @@ tokenize :: proc(t: ^Tokenizer) {
       case ')':
         t.curr += 1
         append_token(t, .Right_Paren)
+      case '{':
+        t.curr += 1
+        append_token(t, .Left_Brace)
+      case '}':
+        t.curr += 1
+        append_token(t, .Right_Brace)
       case '\n':
         t.curr += 1
         append_token(t, .Newline)
+      case '+':
+        t.curr += 1 
+        append_token(t, .Plus)
       case '-':
         t.curr += 1
         ch = t.src[t.curr]
@@ -73,6 +91,12 @@ tokenize :: proc(t: ^Tokenizer) {
         } else {
           append_token(t, .Minus)
         }
+      case '*':
+        t.curr += 1 
+        append_token(t, .Star)
+      case '/':
+        t.curr += 1 
+        append_token(t, .Slash)
       case 0:
         break scan
     }

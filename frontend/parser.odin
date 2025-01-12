@@ -7,6 +7,7 @@ Parser :: struct {
   filename: string,
   src: []byte,
   ast: Any_Node,
+
   
   allocator: mem.Allocator,
   tokens: []Token,
@@ -15,6 +16,14 @@ Parser :: struct {
 
 expect :: proc(p: ^Parser, index: u32, kind: Token_Kind) -> bool {
   return p.tokens[index].kind == kind
+}
+
+skip_newlines :: proc(p: ^Parser) {
+  for p.curr < u32(len(p.tokens)) {
+    tkn := p.tokens[p.curr]
+    if tkn.kind != .Newline do break
+    p.curr += 1
+  }
 }
 
 parser_from_tokenizer :: proc(p: ^Parser, t: ^Tokenizer, allocator:=context.allocator) {
@@ -108,6 +117,14 @@ parse_function :: proc(p: ^Parser, fn_name_tkn: Token_Index) -> ^Function_Decl {
   } 
 
   // now we should check for a function body
+  p.curr += 1
+  if expect(p, p.curr, .Left_Brace) {
+    p.curr += 1
+    skip_newlines(p)
+    func.body = parse_body(p)
+  } else {
+    fmt.panicf("We need to consider how we want to do this????????")
+  }
 
   return func
 }
@@ -162,4 +179,62 @@ parse_field_list :: proc(p: ^Parser) -> []Field {
   }
 
   return fields
+}
+
+parse_body :: proc(p: ^Parser) -> ^Return_Stmt {
+  // should enter on the first token of the statement
+  tkn := p.tokens[p.curr]
+  index := p.curr
+  expr: Any_Expr
+  #partial switch tkn.kind {
+    case .Return:
+      p.curr += 1
+      expr = parse_expression(p)
+    case:
+      fmt.panicf("We only expect a return statement right now: got %v", p.tokens[p.curr].kind)
+
+  }
+
+  stmt := new(Return_Stmt)
+  stmt.expr = expr
+  stmt.tkn_index = index
+
+
+  return stmt
+}
+
+
+// need to change the crap out of this cause this is baddd
+parse_expression :: proc(p: ^Parser) -> Any_Expr {
+  top: Any_Expr
+  for !expect(p, p.curr, .Newline) {
+    lhs := parse_primary(p)
+    op := new(Binary_Expr)
+    op.tkn_index = p.curr
+    p.curr += 1
+    rhs := parse_primary(p)
+
+    op.lhs = lhs
+    op.rhs = rhs
+
+    top = op
+  }
+
+  return top
+}
+
+parse_primary :: proc(p: ^Parser) -> ^Literal {
+  tkn := p.tokens[p.curr]
+  #partial switch tkn.kind {
+    case .Identifier:
+      lit := new(Literal)
+      lit.tkn_index = p.curr
+      p.curr += 1
+      return lit
+    case:
+      fmt.panicf("Not supported operand right now: got %v", p.tokens[p.curr].kind)
+
+  }
+
+  return nil
 }

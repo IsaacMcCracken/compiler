@@ -24,6 +24,9 @@ main :: proc() {
 
   tokenize(&tokenizer)
 
+  // if len(tokenizer.tokens) == 20 do fmt.println("WOW there is 20 tokens")
+  fmt.println("Token Count:", len(tokenizer.tokens))
+
   arena: vmem.Arena
   alloc_err := vmem.arena_init_static(&arena)
   assert(alloc_err == nil)
