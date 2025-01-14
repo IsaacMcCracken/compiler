@@ -183,21 +183,24 @@ parse_field_list :: proc(p: ^Parser) -> []Field {
 
 parse_body :: proc(p: ^Parser) -> ^Return_Stmt {
   // should enter on the first token of the statement
-  tkn := p.tokens[p.curr]
-  index := p.curr
-  expr: Any_Expr
-  #partial switch tkn.kind {
-    case .Return:
-      p.curr += 1
-      expr = parse_expression(p)
-    case:
-      fmt.panicf("We only expect a return statement right now: got %v", p.tokens[p.curr].kind)
+  for !expect(p, .Right_Brace) {
 
+    tkn := p.tokens[p.curr]
+    index := p.curr
+    expr: Any_Expr
+    #partial switch tkn.kind {
+      case .Return:
+        p.curr += 1
+        expr = parse_expression(p)
+      case:
+        fmt.panicf("We only expect a return statement right now: got %v", p.tokens[p.curr].kind)
+  
+    }
+  
+    stmt := new(Return_Stmt)
+    stmt.expr = expr
+    stmt.tkn_index = index
   }
-
-  stmt := new(Return_Stmt)
-  stmt.expr = expr
-  stmt.tkn_index = index
 
 
   return stmt

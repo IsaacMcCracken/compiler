@@ -105,7 +105,7 @@ tokenize :: proc(t: ^Tokenizer) {
 }
 
 tokenizer_identier_or_keyword :: proc(t: ^Tokenizer) {
-  for t.curr < u32(len(t.src)) && (unicode.is_alpha(rune(t.src[t.curr])) || unicode.is_number(rune(t.curr))) {
+  for t.curr < u32(len(t.src)) && (unicode.is_alpha(rune(t.src[t.curr])) || unicode.is_number(rune(t.src[t.curr]))) {
     t.curr += 1
   }
 
