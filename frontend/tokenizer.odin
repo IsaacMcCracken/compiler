@@ -57,7 +57,7 @@ tokenize :: proc(t: ^Tokenizer) {
       case ' ', '\t', '\r':
         t.curr += 1
       case 'a'..='z', 'A'..='Z':
-        tokenizer_identier_or_keyword(t)
+        tokenizer_identifier_or_keyword(t)
       case ':':
         t.curr += 1
         append_token(t, .Colon)
@@ -104,8 +104,8 @@ tokenize :: proc(t: ^Tokenizer) {
   }
 }
 
-tokenizer_identier_or_keyword :: proc(t: ^Tokenizer) {
-  for t.curr < u32(len(t.src)) && (unicode.is_alpha(rune(t.src[t.curr])) || unicode.is_number(rune(t.curr))) {
+tokenizer_identifier_or_keyword :: proc(t: ^Tokenizer) {
+  for t.curr < u32(len(t.src)) && (unicode.is_alpha(rune(t.src[t.curr])) || unicode.is_number(rune(t.src[t.curr]))) {
     t.curr += 1
   }
 

@@ -60,7 +60,6 @@ to_c_stmt :: proc(p: ^Parser, stmt: ^Return_Stmt, b: ^strings.Builder) {
 }
 
 to_c_expr :: proc(p: ^Parser, stmt: Any_Expr, b: ^strings.Builder) {
-  fmt.println(stmt)
   switch kind in stmt {
     case ^Binary_Expr:
       to_c_expr(p, kind.lhs, b)
@@ -71,7 +70,6 @@ to_c_expr :: proc(p: ^Parser, stmt: Any_Expr, b: ^strings.Builder) {
       to_c_expr(p, kind.rhs, b)
 
     case ^Literal:
-      fmt.println("MIAU!!!")
       tkn := p.tokens[kind.tkn_index]
       strings.write_string(b, string(p.src[tkn.start:tkn.end]))
   }

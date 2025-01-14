@@ -4,6 +4,7 @@ import "core:os"
 import "core:fmt"
 import vmem "core:mem/virtual"
 import "core:strings"
+import "core:unicode"
 
 main :: proc() {
   fmt.println("Hellope!")
@@ -18,12 +19,11 @@ main :: proc() {
   // }
 
   contents, ok := os.read_entire_file("smpl/fnprototype.kot")
-
   tokenizer: Tokenizer
   tokenizer_init(&tokenizer, "fnprototype.kot", contents)
 
   tokenize(&tokenizer)
-
+  print_tokens(tokenizer)
   // if len(tokenizer.tokens) == 20 do fmt.println("WOW there is 20 tokens")
   fmt.println("Token Count:", len(tokenizer.tokens))
 
@@ -37,7 +37,6 @@ main :: proc() {
 
 
   node := parse(&parser)
-  fmt.println(tokenizer.tokens)
   fmt.println(node)
 
   b, _ := strings.builder_init(&{})
@@ -47,4 +46,22 @@ main :: proc() {
   code := strings.to_string(b^)
 
   fmt.println(code)
+}
+
+
+print_tokens :: proc(t: Tokenizer) {
+  fmt.print("[ ")
+  for tkn, i in t.tokens {
+    if tkn.kind == .Identifier {
+      fmt.printf("%v:\"%v\"", tkn.kind, string(t.src[tkn.start:tkn.end]))
+    } else {
+      fmt.printf("%v", tkn.kind)
+
+    }
+    if i != len(t.tokens) - 1 {
+      fmt.print(", ")
+    }
+  }
+  fmt.print(" ]\n")
+
 }
