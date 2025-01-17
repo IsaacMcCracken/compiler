@@ -10,6 +10,7 @@ Node :: struct {
 Any_Node :: union #shared_nil {
   ^Node,
   ^Function_Decl,
+  ^Literal
 }
 
 Any_Decl :: union #shared_nil {
@@ -33,7 +34,7 @@ Literal :: struct {
 Field :: struct {
   using node: Node,
   type: ^Type
-}// 2^0 = 1, 2^1 = 1, 2^2 = 4, 2^3 = 8,    
+}
 
 Block :: struct {
   using node: Node, 
