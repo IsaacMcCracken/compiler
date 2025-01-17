@@ -7,13 +7,17 @@ The videos are very boring, but I am learning.
 so far we got this code
 
 ```go
-square :: func(x: int) -> int
+linear :: func(x: int, m: int, b: int) -> int {
+  return m * x + b
+}
 ```
 
 transpiling into this code 
 
 ```c
-int square(int x)
+int linear(int x, int m, int b) {
+  return m * x + b
+}
 ```
 
 we will continue
