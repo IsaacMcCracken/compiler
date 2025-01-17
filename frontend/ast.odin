@@ -61,7 +61,7 @@ Function_Decl :: struct {
   using node: Node, // this has our function name
   params: []Field, // TODO MAKE TYPE SYSTEM
   ret_type: ^Type,
-  body: ^Block_Stmts
+  body: ^Return_Stmt
 }
 
 
