@@ -3,20 +3,17 @@ package frontend
 import "core:os"
 import "core:fmt"
 import vmem "core:mem/virtual"
+import "core:mem"
 import "core:strings"
 import "core:unicode"
+import "base:runtime"
+import odin "core:odin/parser"
 
 main :: proc() {
   fmt.println("Hellope!")
 
   args := os.args
 
-
-  // contents, ok := os.read_entire_file(args[1])
-
-  // if len(contents) > int(max(u32)) {
-  //   panic("We cannot make source files larger than 4 GB")
-  // }
 
   contents, ok := os.read_entire_file("smpl/fnprototype.kot")
   tokenizer: Tokenizer
@@ -46,6 +43,10 @@ main :: proc() {
   code := strings.to_string(b^)
 
   fmt.println(code)
+
+
+  write_ok := os.write_entire_file("output.c", b.buf[:])
+
 }
 
 

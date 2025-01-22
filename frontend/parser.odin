@@ -2,6 +2,7 @@ package frontend
 
 import "core:mem"
 import "core:fmt"
+import rt "base:runtime"
 
 Error_Handler   :: #type proc(token: Token, fmt: string, args: ..any)
 
@@ -45,8 +46,13 @@ peek_token :: proc(p: ^Parser, count:=1) -> (tok: Token) {
 
 token_operator_precedence :: proc(tok: Token) -> int {
   #partial switch tok.kind {
-    case .Plus, .Minus: return 1
-    case .Star, .Slash: return 2
+    case .Logical_Or: return 3
+    case .Logical_And: return 4
+    case .Logical_Equals, .Logical_Not_Equals,
+         .Less_Than, .Greater_Than, .Less_Than_Equal, .Greater_Than_Equal:
+         return 5
+    case .Plus, .Minus: return 6
+    case .Star, .Slash: return 7
     case:
       fmt.panicf("Expected a +-*/ got a %v", tok.kind)
   }
@@ -55,11 +61,7 @@ token_operator_precedence :: proc(tok: Token) -> int {
 }
 
 token_is_operator :: proc(tok: Token) -> bool {
-  #partial switch tok.kind {
-    case .Plus, .Minus, .Star, .Slash: return true
-    case: return false
-  }
-  unreachable()
+  return (u32(tok.kind) >= u32(Token_Kind.Plus)) && (u32(tok.kind) <= u32(Token_Kind.Greater_Than_Equal))
 }
 
 skip_newlines :: proc(p: ^Parser) {
@@ -205,14 +207,12 @@ parse_field_list :: proc(p: ^Parser) -> []Field {
     // Todo do more than primitive types
     advance_token(p)
     if expect(p,  .Int) {
-      // assume int
-      // field.type = Primitive_Type.Int
+      type := parse_type(p)
+      field.type = type
     } else {
       fmt.panicf("Only supported type right now is int")
     }
 
-    advance_token(p)
-    field_count += 1
 
     if expect(p,  .Comma) {
       advance_token(p)
@@ -225,26 +225,115 @@ parse_field_list :: proc(p: ^Parser) -> []Field {
   return fields
 }
 
-parse_body :: proc(p: ^Parser) -> ^Return_Stmt {
-  // should enter on the first token of the statement
-  tkn := p.tokens[p.curr]
-  index := p.curr
-  expr: Any_Expr
-  #partial switch tkn.kind {
-    case .Return:
-      advance_token(p)
-      expr = parse_expression(p)
+
+parse_type :: proc(p: ^Parser) -> ^Primitive_Type {
+  tok, index := current_token(p)
+  type: ^Primitive_Type
+  #partial switch tok.kind {
+    case .Int, .Uint, .U8, .S8, .U16, .S16, .U32, .S32, .U64, .S64, .Float, .F32, .F64:
+      type = &primitive_type_map[tok.kind]
     case:
-      fmt.panicf("We only expect a return statement right now: got %v", p.tokens[p.curr].kind)
+      fmt.panicf("only primitive types rn")
+  }
+  advance_token(p)
+
+  return type
+}
+
+parse_body :: proc(p: ^Parser) -> ^Block {
+  // should enter on the first token of the statement
+  temp := rt.default_temp_allocator_temp_begin() // maybe replace with custom
+  defer rt.default_temp_allocator_temp_end(temp)
+
+  // every time we make a statement we use the temp allocator to
+  // make a slice. Make sure that when call stack gets back to this function
+  // that the context.temp_allocator remains in the same state for slices.
+  // basically when ever a allocation is made on the temp allocator it uses the temp arena ???
+  fmt.println(temp)
+
+  
+  
+  first: ^Any_Stmt  
+  stmts, err := make([]Any_Stmt, 8)
+  count := 0
+
+  
+  parsing_stmts: for !expect(p, .Right_Brace) {
+    token, index := current_token(p)
+    final: Any_Stmt
+    #partial switch token.kind {
+      case .Return:
+        advance_token(p)
+        expr := parse_expression(p)
+        stmt := new(Return_Stmt)
+        stmt.expr = expr
+        stmt.tkn_index = index
+        final = stmt
+      case .Identifier: // this could be a local declaration, a function call, update statement
+        advance_token(p)
+        next_token, next_index := current_token(p)
+        #partial switch next_token.kind {
+          case .Equals, .Plus_Equals, .Minus_Equals, .Times_Equals:
+            stmt := new(Update_Stmt)
+            stmt.tkn_index = next_index
+            stmt.var = new(Literal)
+            stmt.var.tkn_index = index
+            advance_token(p)
+            stmt.expr = parse_expression(p)
+            final = stmt
+            
+          case .Colon:
+            advance_token(p)
+            type := parse_type(p)
+            var := new(Var_Decl)
+            var.type = type
+            var.tkn_index = index
+    
+            if expect(p, .Equals) {
+              advance_token(p)
+              var.init = parse_expression(p)
+            }
+
+            final = var
+        }
+      case .If: {
+        stmt := new(If_Stmt)
+        advance_token(p)
+        stmt.condition = parse_expression(p)
+        skip_newlines(p)
+        if expect(p, .Left_Brace) {
+          advance_token(p)
+          skip_newlines(p)
+          stmt.body = parse_body(p)
+        } else {
+          fmt.panicf("expected a {")
+        }
+
+        final = stmt
+      }
+      case:
+        fmt.panicf("We only expect a return statement right now: got %v", p.tokens[p.curr].kind)
+    }
+
+    skip_newlines(p)
+
+    stmts[count] = final
+    count += 1
 
   }
 
-  stmt := new(Return_Stmt)
-  stmt.expr = expr
-  stmt.tkn_index = index
 
 
-  return stmt
+  block := new(Block)
+  block.stmts = stmts[:count]
+
+  if expect(p, .Right_Brace) {
+    advance_token(p)
+  } else {
+    // error probably
+  }
+
+  return block
 }
 
 
@@ -273,7 +362,7 @@ parse_precedence :: proc(p: ^Parser, lhs: Any_Expr, precedence := 0) -> Any_Expr
     advance_token(p) // second operand
     rhs := parse_urinary(p) // second operand
     lookahead, lindex = current_token(p)
-    // TODO:(ISAAC) when precedence is going up
+    
     for token_is_operator(lookahead) && token_operator_precedence(lookahead) > token_operator_precedence(op) {
       rhs = parse_precedence(p, rhs, token_operator_precedence(lookahead))
       lookahead, lindex = current_token(p)
@@ -296,7 +385,7 @@ parse_precedence :: proc(p: ^Parser, lhs: Any_Expr, precedence := 0) -> Any_Expr
 parse_urinary :: proc(p: ^Parser) -> Any_Expr {
   tkn := p.tokens[p.curr]
   #partial switch tkn.kind {
-    case .Identifier:
+    case .Identifier, .Number:
       lit := new(Literal)
       lit.tkn_index = p.curr
       advance_token(p)
