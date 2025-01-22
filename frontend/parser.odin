@@ -33,6 +33,35 @@ advance_token :: proc(p: ^Parser) -> (tok: Token) {
   return p.tokens[p.curr]
 }
 
+current_token :: proc(p: ^Parser) -> (tok: Token, i: Token_Index) {
+  i = p.curr
+  return peek_token(p, 0), i
+}
+
+peek_token :: proc(p: ^Parser, count:=1) -> (tok: Token) {
+  if int(p.curr) + count > len(p.tokens) do panic("We gotta stop panicing") 
+  return p.tokens[int(p.curr) + count]
+}
+
+token_operator_precedence :: proc(tok: Token) -> int {
+  #partial switch tok.kind {
+    case .Plus, .Minus: return 1
+    case .Star, .Slash: return 2
+    case:
+      fmt.panicf("Expected a +-*/ got a %v", tok.kind)
+  }
+
+  unreachable()
+}
+
+token_is_operator :: proc(tok: Token) -> bool {
+  #partial switch tok.kind {
+    case .Plus, .Minus, .Star, .Slash: return true
+    case: return false
+  }
+  unreachable()
+}
+
 skip_newlines :: proc(p: ^Parser) {
   for p.curr < u32(len(p.tokens)) {
     tkn := p.tokens[p.curr]
@@ -221,24 +250,50 @@ parse_body :: proc(p: ^Parser) -> ^Return_Stmt {
 
 // need to change the crap out of this cause this is baddd
 parse_expression :: proc(p: ^Parser) -> Any_Expr {
-  top: Any_Expr
-  for !expect(p,  .Newline) {
-    lhs := parse_primary(p)
-    op := new(Binary_Expr)
-    op.tkn_index = p.curr
-    advance_token(p)
-    rhs := parse_primary(p)
-
-    op.lhs = lhs
-    op.rhs = rhs
-
-    top = op
-  }
-
-  return top
+  return parse_precedence(p, parse_urinary(p))
 }
 
-parse_primary :: proc(p: ^Parser) -> ^Literal {
+parse_precedence :: proc(p: ^Parser, lhs: Any_Expr, precedence := 0) -> Any_Expr {
+  // make loohahead helper called peek_token
+  // parse primary should be parse_urinary
+  // get_token_op_precedence(tok: Token) -> int
+  // make a function that checks if token is a operator
+  // token_is_operator should be called token is binary operator
+
+  // When precedence is going down or staying the same we want to loop
+  // When precedence is going up we want to recurse.
+  lhs := lhs
+  lookahead, lindex := current_token(p) // should be operator
+
+  // assert(lookahead.kind == .Plus)
+
+  for token_is_operator(lookahead) && token_operator_precedence(lookahead) >= precedence {
+    op, oindex := lookahead, lindex
+    
+    advance_token(p) // second operand
+    rhs := parse_urinary(p) // second operand
+    lookahead, lindex = current_token(p)
+    // TODO:(ISAAC) when precedence is going up
+    for token_is_operator(lookahead) && token_operator_precedence(lookahead) > token_operator_precedence(op) {
+      rhs = parse_precedence(p, rhs, token_operator_precedence(lookahead))
+      lookahead, lindex = current_token(p)
+    }
+    operation := new(Binary_Expr)
+    operation^ = Binary_Expr{
+      lhs = lhs,
+      rhs = rhs,
+      tkn_index = oindex
+    }
+
+    lhs = operation
+  }
+
+  // fmt.println(lookahead)
+  return lhs
+
+}
+
+parse_urinary :: proc(p: ^Parser) -> Any_Expr {
   tkn := p.tokens[p.curr]
   #partial switch tkn.kind {
     case .Identifier:
@@ -248,7 +303,6 @@ parse_primary :: proc(p: ^Parser) -> ^Literal {
       return lit
     case:
       fmt.panicf("Not supported operand right now: got %v", p.tokens[p.curr].kind)
-
   }
 
   return nil

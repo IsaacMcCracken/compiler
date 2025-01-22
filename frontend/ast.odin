@@ -9,7 +9,7 @@ Node :: struct {
 Any_Node :: union #shared_nil {
   ^Node,
   ^Function_Decl,
-  ^Return_Stmt
+  ^Literal
 }
 
 Any_Decl :: union #shared_nil {
@@ -39,7 +39,6 @@ Field :: struct {
   using node: Node,
   type: ^Type
 }
-
 
 Block_Stmts :: struct {
   stmts: []Any_Stmt
