@@ -15,18 +15,57 @@ Token_Kind :: enum u32 {
   Right_Paren,
   Left_Brace,
   Right_Brace,
-
+  
   // most likely math operators
+  
   Plus,
   Minus,
   Star,
   Slash,
 
+
+  // Logical Operators
+  Logical_Not,
+  Logical_Or, // and
+  Logical_And, // or
+  Logical_Equals, // ==
+  Logical_Not_Equals, // !=
+  Less_Than, // a < b
+  Greater_Than, // a > b
+  Less_Than_Equal, // a <= b
+  Greater_Than_Equal, // a >= b
+
+  // updaters
+  Plus_Equals,
+  Minus_Equals,
+  Times_Equals,
+  Slash_Equals,
+  Equals,
+
+
+  Number, // there is more here
+
+  // primitive types
   Int,
+  Uint,
+  S8,
+  S16,
+  S32,
+  S64,
+  U8,
+  U16,
+  U32,
+  U64,
+
+  Float,
+  F32,
+  F64,
+
   Func,
   Arrow,
 
   // control flow
+  If,
   Return,
 }
 
@@ -49,6 +88,14 @@ tokenizer_init :: proc(t: ^Tokenizer, filename: string, src: []byte) {
   t.tokens, _ = make([dynamic]Token)
 }
 
+tokenizer_number :: proc(t: ^Tokenizer) {
+  for t.curr < u32(len(t.src)) && unicode.is_digit(rune(t.src[t.curr])) {
+    t.curr += 1
+  }
+
+  append_token(t, .Number)
+}
+
 tokenize :: proc(t: ^Tokenizer) {
   scan: for t.curr < u32(len(t.src)) {
     t.prev = t.curr
@@ -58,6 +105,9 @@ tokenize :: proc(t: ^Tokenizer) {
         t.curr += 1
       case 'a'..='z', 'A'..='Z':
         tokenizer_identifier_or_keyword(t)
+      
+      case '0'..='9':
+        tokenizer_number(t)
       case ':':
         t.curr += 1
         append_token(t, .Colon)
@@ -79,24 +129,81 @@ tokenize :: proc(t: ^Tokenizer) {
       case '\n':
         t.curr += 1
         append_token(t, .Newline)
+      case '<':
+        t.curr += 1
+        ch := t.src[t.curr] 
+        if ch == '=' {
+          t.curr += 1
+          append_token(t, .Less_Than_Equal)
+        } else {
+          append_token(t, .Less_Than)
+        }
+      case '>':
+        t.curr += 1
+        ch := t.src[t.curr] 
+        if ch == '=' {
+          t.curr += 1
+          append_token(t, .Greater_Than_Equal)
+        } else {
+          append_token(t, .Greater_Than)
+        }
+      case '!':
+        t.curr += 1
+        ch := t.src[t.curr]
+        if ch == '=' {
+          t.curr += 1
+          append_token(t, .Logical_Not_Equals)
+        } else {
+          append_token(t, .Logical_Not)
+        }
+      case '=':
+        t.curr += 1
+        ch := t.src[t.curr]
+        if ch == '=' {
+          t.curr += 1
+          append_token(t, .Logical_Equals)
+        } else {
+          append_token(t, .Equals)
+        }
       case '+':
         t.curr += 1 
-        append_token(t, .Plus)
+        ch = t.src[t.curr]
+        if ch == '=' {
+          t.curr += 1
+          append_token(t, .Plus_Equals)
+        } else {
+          append_token(t, .Plus)
+        }      
       case '-':
         t.curr += 1
         ch = t.src[t.curr]
         if ch == '>' {
           t.curr += 1
           append_token(t, .Arrow)
+        } else if ch == '=' {
+          t.curr += 1
+          append_token(t, .Minus_Equals)
         } else {
           append_token(t, .Minus)
         }
       case '*':
         t.curr += 1 
-        append_token(t, .Star)
+        ch = t.src[t.curr]
+        if ch == '=' {
+          t.curr += 1
+          append_token(t, .Times_Equals)
+        } else {
+          append_token(t, .Star)
+        }
       case '/':
         t.curr += 1 
-        append_token(t, .Slash)
+        ch = t.src[t.curr]
+        if ch == '=' {
+          t.curr += 1
+          append_token(t, .Slash_Equals)
+        } else {
+          append_token(t, .Slash)
+        }
       case 0:
         break scan
     }

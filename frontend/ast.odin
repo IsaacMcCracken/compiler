@@ -22,6 +22,14 @@ Any_Expr :: union #shared_nil {
   ^Literal,
 }
 
+Any_Stmt :: union #shared_nil {
+  ^Block,
+  ^Return_Stmt,
+  ^Update_Stmt,
+  ^If_Stmt,
+  ^Var_Decl,
+}
+
 Binary_Expr :: struct {
   using node: Node,
   lhs, rhs: Any_Expr
@@ -33,11 +41,12 @@ Literal :: struct {
 
 Field :: struct {
   using node: Node,
-  type: ^Type
+  type: ^Primitive_Type
 }
 
 Block :: struct {
   using node: Node, 
+  stmts: []Any_Stmt 
 }
 
 Return_Stmt :: struct {
@@ -45,12 +54,31 @@ Return_Stmt :: struct {
   expr: Any_Expr,
 }
 
+If_Stmt :: struct {
+  using node: Node,
+  condition: Any_Expr,
+  body: ^Block,
+}
+
+Update_Stmt :: struct {
+  using node: Node,
+  var: ^Literal, //maybe make this a literal :( idk
+  expr: Any_Expr
+}
+
+
+Var_Decl :: struct {
+  using node: Node,
+  type: ^Primitive_Type,
+  init: Any_Expr,
+}
+
 
 Function_Decl :: struct {
   using node: Node, // this has our function name
-  params: []Field, // TODO MAKE TYPE SYSTEM
-  ret_type: ^Type,
-  body: ^Return_Stmt
+  params: []Field, 
+  ret_type: ^Primitive_Type,
+  body: ^Block
 }
 
 

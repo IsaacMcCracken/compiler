@@ -1,3 +1,10 @@
-two :: func(x: int, y: int, z: int, w: int) -> int {
-  return z / w + y * x
+main :: func(argc: int) -> int {
+  var: f32 = 4
+  x: int
+  if argc > 2 {
+    argc += 5
+  }
+
+  
+  return 0
 }
