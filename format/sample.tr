@@ -1,0 +1,6 @@
+("Module Name"
+  ##//("these are how comments work")
+  main @func(args @type(slice(U8))) (
+    
+  )
+)

@@ -16,11 +16,6 @@ Any_Decl :: union #shared_nil {
   ^Function_Decl
 }
 
-Any_Stmt :: union #shared_nil {
-  ^Update_Stmt,
-  ^Return_Stmt,
-}
-
 Any_Expr :: union #shared_nil {
   ^Binary_Expr,
   ^Literal,

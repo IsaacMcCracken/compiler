@@ -155,20 +155,17 @@ parse_function :: proc(p: ^Parser, fn_name_tkn: Token_Index) -> ^Function_Decl {
   if expect(p,  .Arrow) {
     advance_token(p)
     // Todo not expect int but any type 
-    if expect(p,  .Int) {
-    } else {
-      fmt.panicf("Only should return int we are int early stages")
-    }
+    func.ret_type = parse_type(p)
   } 
 
   // now we should check for a function body
-  advance_token(p)
+  skip_newlines(p)
   if expect(p,  .Left_Brace) {
     advance_token(p)
     skip_newlines(p)
     func.body = parse_body(p)
   } else {
-    fmt.panicf("We need to consider how we want to do this????????")
+    fmt.panicf("GOT milkies")
   }
 
   return func
