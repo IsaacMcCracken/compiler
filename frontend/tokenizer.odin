@@ -5,19 +5,22 @@ import "core:unicode"
 // square :: func(x: int) -> int
 Token_Kind :: enum u32 {
   Invalid,
-
   Identifier,
 
   Colon,
   Comma,
   Newline,
+
+  Left_Bracket,
+  Right_Bracket,
+
   Left_Paren,
   Right_Paren,
+
   Left_Brace,
   Right_Brace,
   
   // most likely math operators
-  
   Plus,
   Minus,
   Star,
@@ -66,6 +69,10 @@ Token_Kind :: enum u32 {
 
   // control flow
   If,
+  For,
+  In,
+  Dot,
+  Range_Less,
   Return,
 }
 
@@ -111,6 +118,22 @@ tokenize :: proc(t: ^Tokenizer) {
       case ':':
         t.curr += 1
         append_token(t, .Colon)
+      case '.':
+        t.curr += 1
+        ch = t.src[t.curr]
+        if ch == '.' {
+          t.curr += 1
+          ch = t.src[t.curr]
+          if ch == '<' {
+            t.curr += 1
+            append_token(t, .Range_Less)
+          } else {
+            // error
+            panic("illegal token")
+          }
+        } else {
+          append_token(t, .Dot)
+        }
       case ',':
         t.curr += 1
         append_token(t, .Comma)
@@ -126,6 +149,12 @@ tokenize :: proc(t: ^Tokenizer) {
       case '}':
         t.curr += 1
         append_token(t, .Right_Brace)
+      case '[':
+        t.curr += 1
+        append_token(t, .Left_Bracket)
+      case ']':
+        t.curr += 1
+        append_token(t, .Right_Bracket)
       case '\n':
         t.curr += 1
         append_token(t, .Newline)

@@ -16,6 +16,50 @@ to_c_code :: proc(p: ^Parser, node: Any_Node, b: ^strings.Builder) {
   }
 }
 
+to_c_var_decl :: proc(p: ^Parser, decl: ^Var_Decl, b: ^strings.Builder) {
+  switch type in decl.type {
+    case ^Primitive_Type:
+      to_c_primitive_type(type^, b) 
+      strings.write_byte(b, ' ')
+      name := get_node_name(p, decl)
+      strings.write_string(b, name)
+      
+      if decl.init != nil {
+        strings.write_string(b, " = ")
+        to_c_expr(p, decl.init, b)
+      } else {
+        strings.write_string(b, " = 0")
+      }
+      strings.write_string(b, ";\n")
+    case ^Array_Type:
+      // fix this
+      base := type.base.(^Primitive_Type) // obviously figure out logic for more compounds
+      to_c_primitive_type(base^, b) 
+      strings.write_byte(b, ' ')
+      name := get_node_name(p, decl)
+      strings.write_string(b, name)
+      strings.write_byte(b, '[')
+      strings.write_int(b, int(type.len))
+      strings.write_byte(b, ']')
+
+      assert(decl.init == nil) // we will see this later
+      strings.write_string(b, " = {0}")
+      strings.write_string(b, ";\n")
+    case ^Slice_Type:
+      // declaration
+      /*
+        struct { base *ptr, unsigned long long len } var_name;
+      */
+      strings.write_string(b, "struct {")
+      to_c_primitive_type(type.base.(^Primitive_Type)^, b)
+      strings.write_string(b, " *ptr; unsigned long long len;} ")
+      name := get_node_name(p, decl)
+      strings.write_string(b, name)
+      strings.write_string(b, ";\n")
+
+  }
+}
+
 to_c_primitive_type :: proc(type: Primitive_Type, b: ^strings.Builder) {
   switch kind in type {
     case Float_Type:
@@ -41,12 +85,25 @@ to_c_primitive_type :: proc(type: Primitive_Type, b: ^strings.Builder) {
   }
 }
 
+to_c_operator :: proc(p: ^Parser, op: ^Binary_Expr, b: ^strings.Builder) {
+  tok := p.tokens[op.tkn_index]
+
+  #partial switch tok.kind {
+    case .Logical_And:
+      strings.write_string(b, "&&")
+    case .Logical_Or:
+      strings.write_string(b, "||")
+    case:
+      strings.write_string(b, string(p.src[tok.start:tok.end]))
+  }
+}
+
 
 to_c_function :: proc(p: ^Parser, fn: ^Function_Decl, b: ^strings.Builder) {
   if fn.ret_type == nil {
     strings.write_string(b, "void")
   } else {
-    to_c_primitive_type(fn.ret_type^, b)
+    to_c_primitive_type(fn.ret_type.(^Primitive_Type)^, b) // fuck it we will fix this later
   }
 
   strings.write_byte(b, ' ')
@@ -59,7 +116,7 @@ to_c_function :: proc(p: ^Parser, fn: ^Function_Decl, b: ^strings.Builder) {
 
   for field, index in fn.params {
     if field.type != nil {
-      to_c_primitive_type(field.type^, b)
+      to_c_primitive_type(field.type.(^Primitive_Type)^, b) // fuck it fix this later
     }
 
     strings.write_byte(b, ' ')
@@ -70,7 +127,7 @@ to_c_function :: proc(p: ^Parser, fn: ^Function_Decl, b: ^strings.Builder) {
     }
   }
 
-  strings.write_string(b, " ) ")
+  strings.write_string(b, " )\n")
 
 
   if fn.body != nil {
@@ -117,18 +174,22 @@ to_c_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, level := 0) {
       strings.write_string(b, " )\n")
       to_c_block(p, kind.body, b, level)
     case ^Var_Decl:
-      to_c_primitive_type(kind.type^, b)
-      strings.write_byte(b, ' ')
-      name := get_node_name(p, kind)
-      strings.write_string(b, name)
+      to_c_var_decl(p, kind, b)
+    case ^For_Range_Less_Stmt:
+      strings.write_string(b, "for ( long long ")
+      counter_name := get_node_name(p, kind.counter)
+      strings.write_string(b, counter_name)
+      strings.write_string(b, " = ")
+      to_c_expr(p, kind.start_expr, b)
+      strings.write_string(b, "; ")
+      strings.write_string(b, counter_name)
+      strings.write_string(b, " < ")
+      to_c_expr(p, kind.end_expr, b)
+      strings.write_string(b, "; ")
+      strings.write_string(b, counter_name)
+      strings.write_string(b, "++)\n")
+      to_c_block(p, kind.body, b, level)
       
-      if kind.init != nil {
-        strings.write_string(b, " = ")
-        to_c_expr(p, kind.init, b)
-      } else {
-        strings.write_string(b, " = 0")
-      }
-      strings.write_string(b, ";\n")
   }
 }
 
@@ -137,8 +198,9 @@ to_c_expr :: proc(p: ^Parser, expr: Any_Expr, b: ^strings.Builder) {
     case ^Binary_Expr:
       to_c_expr(p, kind.lhs, b)
       strings.write_byte(b, ' ')
-      tkn := p.tokens[kind.tkn_index]
-      strings.write_string(b, string(p.src[tkn.start:tkn.end]))
+
+      // make the binary operator a c type
+      to_c_operator(p, kind, b)
       strings.write_byte(b, ' ')
       to_c_expr(p, kind.rhs, b)
 

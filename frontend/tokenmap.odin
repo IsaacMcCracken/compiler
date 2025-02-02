@@ -3,6 +3,8 @@ package frontend
 
 tmap := map[string]Token_Kind {
   "func" = .Func,
+  "for" = .For,
+  "in" = .In,
   "return" = .Return,
   "and" = .Logical_And,
   "or" = .Logical_Or,

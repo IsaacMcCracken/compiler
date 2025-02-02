@@ -26,9 +26,10 @@ main :: proc() {
 
   arena: vmem.Arena
   alloc_err := vmem.arena_init_static(&arena)
+  defer vmem.arena_destroy(&arena)
   assert(alloc_err == nil)
 
-
+  
   parser: Parser
   parser_from_tokenizer(&parser, &tokenizer, vmem.arena_allocator(&arena))
 

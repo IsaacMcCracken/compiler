@@ -27,6 +27,7 @@ Any_Stmt :: union #shared_nil {
   ^Update_Stmt,
   ^If_Stmt,
   ^Var_Decl,
+  ^For_Range_Less_Stmt
 }
 
 Binary_Expr :: struct {
@@ -40,7 +41,7 @@ Literal :: struct {
 
 Field :: struct {
   using node: Node,
-  type: ^Primitive_Type
+  type: Type
 }
 
 Block :: struct {
@@ -59,6 +60,14 @@ If_Stmt :: struct {
   body: ^Block,
 }
 
+For_Range_Less_Stmt :: struct {
+  using node: Node,
+  counter: ^Literal,
+  start_expr: Any_Expr,
+  end_expr: Any_Expr,
+  body: ^Block
+}
+
 Update_Stmt :: struct {
   using node: Node,
   var: ^Literal, //maybe make this a literal :( idk
@@ -68,15 +77,18 @@ Update_Stmt :: struct {
 
 Var_Decl :: struct {
   using node: Node,
-  type: ^Primitive_Type,
+  type: Type,
   init: Any_Expr,
 }
 
+For_Stmt :: struct {
+  using node: Node
+}
 
 Function_Decl :: struct {
   using node: Node, // this has our function name
   params: []Field, 
-  ret_type: ^Primitive_Type,
+  ret_type: Type,
   body: ^Block
 }
 

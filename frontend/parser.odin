@@ -2,9 +2,10 @@ package frontend
 
 import "core:mem"
 import "core:fmt"
+import "core:strconv"
 import rt "base:runtime"
 
-Error_Handler   :: #type proc(token: Token, fmt: string, args: ..any)
+Error_Handler :: #type proc(token: Token, fmt: string, args: ..any)
 
 
 Parser :: struct {
@@ -203,12 +204,9 @@ parse_field_list :: proc(p: ^Parser) -> []Field {
     // type
     // Todo do more than primitive types
     advance_token(p)
-    if expect(p,  .Int) {
-      type := parse_type(p)
-      field.type = type
-    } else {
-      fmt.panicf("Only supported type right now is int")
-    }
+    type := parse_type(p)
+    field.type = type
+
 
 
     if expect(p,  .Comma) {
@@ -222,15 +220,62 @@ parse_field_list :: proc(p: ^Parser) -> []Field {
   return fields
 }
 
+parse_expect_number :: proc(p: ^Parser) -> (value: int, ok: bool) {
+  tok, idx := current_token(p)
+  if tok.kind != .Number do return 0, false
+  str := string(p.src[tok.start:tok.end])
+  advance_token(p)
+  return strconv.parse_int(str)
+}
 
-parse_type :: proc(p: ^Parser) -> ^Primitive_Type {
+parse_type :: proc(p: ^Parser) -> Type {
   tok, index := current_token(p)
-  type: ^Primitive_Type
+  type: Type
+
   #partial switch tok.kind {
+    /* Primitive Types */
     case .Int, .Uint, .U8, .S8, .U16, .S16, .U32, .S32, .U64, .S64, .Float, .F32, .F64:
       type = &primitive_type_map[tok.kind]
+    
+    /* Array Types */
+    case .Left_Bracket:
+      advance_token(p)
+
+      if expect(p, .Right_Bracket) {
+        /* slice array */
+        advance_token(p)
+        base := parse_type(p)
+
+        slice_type := new(Slice_Type)
+        slice_type.base = base
+        type = base
+      } else {
+        /* static array */
+        length, ok := parse_expect_number(p) // this function advances the token
+        if !ok do fmt.panicf("Fuck it we fail right now")
+        
+        if !expect(p, .Right_Bracket) {
+          fmt.panicf("Where is the closing bracket")
+        }
+        advance_token(p)
+        // base type
+        base := parse_type(p)
+  
+        // TODO: make a global type system
+        arr_type := new(Array_Type)
+        arr_type^ = Array_Type{
+          base = base,
+          len = u32(length)
+        }
+  
+        
+        type = arr_type
+      }
+
+      // consider making this a expresion
+
     case:
-      fmt.panicf("only primitive types rn")
+      fmt.panicf("only primitive types rn, here is the token we got %v", p.tokens[:p.curr+1])
   }
   advance_token(p)
 
@@ -246,7 +291,7 @@ parse_body :: proc(p: ^Parser) -> ^Block {
   // make a slice. Make sure that when call stack gets back to this function
   // that the context.temp_allocator remains in the same state for slices.
   // basically when ever a allocation is made on the temp allocator it uses the temp arena ???
-  fmt.println(temp)
+  // fmt.println(temp)
 
   
   
@@ -307,6 +352,50 @@ parse_body :: proc(p: ^Parser) -> ^Block {
         }
 
         final = stmt
+      }
+
+
+      case .For: {
+        advance_token(p)
+        token, index = current_token(p)
+        
+        if expect(p, .Identifier)  {
+          identifier_tok, identifier_idx := token, index
+          counter := new(Literal)
+          counter^ = Literal{tkn_index = identifier_idx}
+          advance_token(p)
+          if expect(p, .In) {
+            advance_token(p)
+            start_expr := parse_expression(p)
+            if !expect(p, .Range_Less) {
+              fmt.panicf("we are expecting a range here sorry")
+            }
+
+            advance_token(p)
+
+            end_expr := parse_expression(p) 
+            skip_newlines(p)
+            if !expect(p, .Left_Brace) {
+              fmt.panicf("we need to start the scope")
+            }
+            advance_token(p)
+            skip_newlines(p)
+            body := parse_body(p)
+
+            for_less_stmt := new(For_Range_Less_Stmt)
+            for_less_stmt^ = For_Range_Less_Stmt{
+              tkn_index = index,
+              start_expr = start_expr,
+              end_expr = end_expr,
+              counter = counter,
+              body = body
+            }
+
+            final = for_less_stmt
+          }
+        } else {
+          fmt.panicf("We do not support this debauchery right now")
+        }
       }
       case:
         fmt.panicf("We only expect a return statement right now: got %v", p.tokens[p.curr].kind)
