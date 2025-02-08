@@ -1,6 +1,18 @@
-("Module Name"
-  ##//("these are how comments work")
-  main @func(args @type(slice(U8))) (
+@groveversion(0.1) program (
+  @func main (
+    @var(int) x (60)
+    @var(int) y (9)
+    @var(int) z (+ (x y))
     
+    print(x "+" y "=" z)
+    
+    @cond(> (x 0)) if (
+      +=(x 360)
+    )
+
+    
+    print(x)
+
+    return (0)
   )
 )
