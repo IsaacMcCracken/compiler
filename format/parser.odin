@@ -39,22 +39,17 @@ Parser :: struct {
   module_name: string,
   using t: Tokenizer, 
   nodes: [dynamic]Node,
-  tags:  [dynamic]Tag_Node
 }
 
-Tag_Node :: struct {
-  next, prev: Link,
-  using list: Node_List,
-  str: Index
-}
 
 Node :: struct {
-  str: Index,
-  parent, ref: Link,
+  token: Index,
+  ref: Link,
   next, prev: Link,
   children: Node_List,
-  tag_list: Tag_Ref
+  atributes: Node_List
 }
+
 
 Node_List :: struct {
   first, last: Link
@@ -111,6 +106,7 @@ token_produce_captured_identifier :: proc(t: ^Tokenizer) {
 
 token_produce_tag :: proc(t: ^Tokenizer) {
   rune_advance(t)
+  t.prev = t.curr
   for t.curr < u32(len(t.src)) {
     r := rune_current(t)
     
@@ -159,18 +155,24 @@ tokenizer_init :: proc(t: ^Tokenizer, filename: string, allocator:=context.alloc
   return true
 }
 
+parse_get_node_name :: proc(p: ^Parser, node: Link) -> (str: string) {
+  n := get_node(p, node)
+  return parse_get_token_name(p, n.token)
+}
+
+parse_get_token_name :: proc(p: ^Parser, tok_index: Index) -> (str: string) {
+  tok := p.tokens[tok_index]
+  return string(p.src[tok.start:tok.end])
+}
+
 
 alloc_new_node :: proc(p: ^Parser, tok_index: Index) -> (n: ^Node, link: Link) {
   link = Index(len(p.nodes))
-  append(&p.nodes, Node{str = tok_index})
+  append(&p.nodes, Node{token = tok_index})
   return &p.nodes[link], link
 }
 
-alloc_new_tag :: proc(p: ^Parser, tok_index: Index) -> (n: ^Node, ref: Tag_Ref) {
-  ref = Tag_Ref(len(p.nodes))
-  append(&p.nodes, Node{str = tok_index})
-  return &p.nodes[ref], ref
-}
+
 
 parse_token_peek :: proc(p: ^Parser, peek: Index = 1) -> (kind: Token_Kind, index: Index) {
   index = p.curr + peek
@@ -202,68 +204,150 @@ parse_expect :: proc(p: ^Parser, kind: Token_Kind) -> (ok: bool) {
   return k == kind
 }
 
-parse_get_node :: proc(p: ^Parser, link: Link) -> (node: ^Node) {
+get_node :: proc(p: ^Parser, link: Link) -> (node: ^Node) {
+  if int(link) > len(p.nodes) || link == 0 {
+    return nil
+  }
+  
   return &p.nodes[link]
 }
 
-parse_get_tag :: proc(p: ^Parser, ref: Tag_Ref) -> (tag: ^Tag_Node) {
-  return &p.tags[ref]
+push_node :: proc(p: ^Parser, prev, next: Link) {
+  pv := get_node(p, prev)
+  nx := get_node(p, next)
+
+  nx.prev = prev
+  pv.next = next
 }
 
-parse_push_tag :: proc(p: ^Parser, prev_ref: Tag_Ref) {
-  prev := parse_get_tag(p, prev_ref)
+push_list :: proc(p: ^Parser, list: ^Node_List, new: Link) {
+  if list.last != 0 {
+    // default case when this list is not empty
+    assert(list.first == 0)
+    push_node(p, list.last, new)
+    list.last = new
+  } else {
+    list.first = new
+    list.last = new
+  }
+}
+
+push_child :: proc(p: ^Parser, parent, child: Link) {
+  par := get_node(p, parent)
+  push_list(p, &par.children, child)
+}
+
+parse_nodes :: proc(p: ^Parser) -> (children: Node_List) {
+  kind, index := parse_token_current(p)
+
+  for kind == .Identifier || kind == .Tag {
+    tag_list := parse_tags(p)
+    kind, index = parse_token_current(p)
+
+    
+    if kind != .Identifier {
+      str := parse_get_token_name(p, index)
+      fmt.panicf("why: %v %v, %v", index, kind, str)
+    }
+    
+    node, link  := alloc_new_node(p, index)
+    push_list(p, &children, link)
+
+    kind, index = parse_token_advance(p)
+
+    if kind == .Scope_Start {
+      parse_token_advance(p)
+      node.children = parse_nodes(p)
+      
+      if !parse_expect(p, .Scope_End) {
+        fmt.panicf("Where is the scope end")
+      } 
+    }
   
+    
+  }
+
+  
+  
+  
+  
+
+
+
+  return children
 }
 
-parse_tags :: proc(p: ^Parser) -> (ref: Tag_Ref) {
+parse_tags :: proc(p: ^Parser) -> (list: Node_List) {
   // function should enter on the tag and exit if not on tag and return 0 tag ref
   tok_kind, tok_index := parse_token_current(p)
   
   for tok_kind == .Tag {
-    tag, tag_ref := alloc_new_tag(p, tok_index)
-    ref = tag_ref
-    parse_push_tag(p, parent, tag_ref)
-
+    tag, link := alloc_new_node(p, tok_index)
+    push_list(p, &list, link)
+    
     tok_kind, tok_index = parse_token_advance(p)
 
+
     if tok_kind == .Scope_Start {
-      
+      tok_kind, tok_index = parse_token_advance(p)
+      tag.children = parse_nodes(p)
+      if !parse_expect(p, .Scope_End) {
+        fmt.panicf("expected to end")
+      }
+      tok_kind, tok_index = parse_token_advance(p)
     }
 
   }
 
+  return list
 }
 
-parse_children :: proc(p: ^Parser) -> (list: Node_List) {
 
-}
 
-parse_file :: proc(p: ^Parser, t: Tokenizer) -> (ok: bool) {
+parse_file :: proc(p: ^Parser, t: Tokenizer) -> (root: ^Node, module: string) {
   p.t = t
   p.nodes = make([dynamic]Node)
-  p.tags  = make([dynamic]Tag_Node)
   p.curr = 0
 
-  //stub tag
 
-  // module_name
-  if parse_expect(p, .Identifier) {
-    file_node, file_node_index := alloc_new_node(p, 0)
-    
-  } else {
-    return false
+  
+  kind, index := parse_token_current(p)
+  name := parse_get_token_name(p, index)
+  if kind != .Tag || name != "forest" {
+    fmt.panicf("%v", name)
   }
 
-  parse_node :: proc(p: ^Parser, parent: Link) {
+  // start
+  kind, index = parse_token_advance(p)
+  // version  
+  kind, index = parse_token_advance(p)
+  // end
+  kind, index = parse_token_advance(p)
 
+  // module name
+  kind, index = parse_token_advance(p)
+  link: Link
+  root, link = alloc_new_node(p, index)
+  module = parse_get_token_name(p, index)
+  fmt.println("MODULE NAME:", module)
+
+  // decls
+  kind, index = parse_token_advance(p)
+
+  if kind == .Scope_Start {
+    kind, index = parse_token_advance(p)
+
+    root.children = parse_nodes(p)
+    if !parse_expect(p, .Scope_End) {
+      // fmt.panicf("no i expected a scope end")
+    }
   }
 
-  // parse_tags :: proc(p: ^Parser, parent:)
-
-  return true
+  return
 }
 
 
+import "core:strings"
 
 
 main :: proc() {
@@ -274,12 +358,23 @@ main :: proc() {
 
   tokenize(t)
 
+  
   p := &Parser{}
-  parse_file(p, t^)
-  alloc_new_node(p, 5)
+  root, name := parse_file(p, t^)
 
+  for tok, i in t.tokens {
+    if tok.kind == .Identifier || tok.kind == .Tag {
+      fmt.println(i, tok.kind, parse_get_token_name(p, Index(i)))
+    } else {
 
-  for tok in t.tokens {
-    fmt.println(tok.kind)
+      fmt.println(i, tok.kind)
+    }
   }
+
+  b := strings.builder_init(&{})
+
+
+  code := unparse(p, b)
+  fmt.println(code)
+
 }

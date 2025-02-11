@@ -8,3 +8,4 @@ factorial :: func(n: s32) -> s32 {
   }
   return x
 }
+
