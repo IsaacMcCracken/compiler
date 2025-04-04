@@ -1,0 +1,15 @@
+[ ] - Add c foreign function interface i.e get printf working
+[ ] - Add enums
+[ ] - Add bit_sets ????
+[ ] - add tagged unions
+[-] - Add pointer type (dont know the weak spots)
+[ ] - Add structs to the type system (1/2)
+[x] - Add array indexing 
+[x] - Add function calls 
+[x] - Type Conversion Operator i.e. int(some_float)
+[ ] - Better error messages other than panicing like we should recover and continue parsing
+[ ] - Add in order semantic analysis
+[ ] - Add out of order type system 
+[ ] - Add implicit type inference i.e. ':='
+[ ] - Type Checking
+
