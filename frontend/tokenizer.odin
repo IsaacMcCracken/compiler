@@ -65,6 +65,7 @@ Token_Kind :: enum u32 {
   F64,
 
   Func,
+  Struct,
   Arrow,
 
   // control flow
@@ -256,4 +257,8 @@ tokenizer_identifier_or_keyword :: proc(t: ^Tokenizer) {
 
 append_token :: proc(t: ^Tokenizer, kind: Token_Kind) {
   append(&t.tokens, Token{start = t.prev, end = t.curr, kind = kind})
+}
+
+token_get_kind :: proc(t: ^Tokenizer, index: Token_Index) -> Token_Kind {
+  return t.tokens[index].kind
 }

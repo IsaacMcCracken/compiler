@@ -10,8 +10,6 @@ import "base:runtime"
 import odin "core:odin/parser"
 
 main :: proc() {
-  fmt.println("Hellope!")
-
   args := os.args
 
 
@@ -20,9 +18,7 @@ main :: proc() {
   tokenizer_init(&tokenizer, "fnprototype.kot", contents)
 
   tokenize(&tokenizer)
-  print_tokens(tokenizer)
-  // if len(tokenizer.tokens) == 20 do fmt.println("WOW there is 20 tokens")
-  fmt.println("Token Count:", len(tokenizer.tokens))
+
 
   arena: vmem.Arena
   alloc_err := vmem.arena_init_static(&arena)
@@ -34,11 +30,11 @@ main :: proc() {
   parser_from_tokenizer(&parser, &tokenizer, vmem.arena_allocator(&arena))
 
 
-  node := parse(&parser)
-  fmt.println(node)
+  parse(&parser)
+  sema_analyze(&parser)
 
   b, _ := strings.builder_init(&{})
-  to_c_code(&parser, node, b)
+  to_c_code(&parser, b)
 
 
   code := strings.to_string(b^)

@@ -9,13 +9,17 @@ Float_Type :: bit_field u32 {
   size: u8 | 4
 }
 
-Array_Type :: struct {
+Array_Like_Type :: struct {
   base: Type,
+}
+
+Array_Type :: struct {
+  using array: Array_Like_Type,
   len: u32,
 }
 
 Slice_Type :: struct {
-  base: Type
+  using array: Array_Like_Type,
 }
 
 Primitive_Type :: union {
@@ -23,11 +27,22 @@ Primitive_Type :: union {
   Float_Type,
 }
 
+Struct_Type :: struct {
+  decl: ^Struct_Decl
+}
+
+Literal_Type :: enum {
+  Invalid,
+  Any_Number,
+  Any_Float,
+  String,
+}
 
 Type :: union #shared_nil {
   ^Primitive_Type,
   ^Array_Type,
   ^Slice_Type,
+  Literal_Type,
 }
 
 

@@ -1,8 +1,10 @@
+#+feature dynamic-literals
 package frontend
 
 
 tmap := map[string]Token_Kind {
   "func" = .Func,
+  "struct" = .Struct,
   "for" = .For,
   "in" = .In,
   "return" = .Return,

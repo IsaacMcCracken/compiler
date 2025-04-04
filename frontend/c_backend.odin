@@ -7,16 +7,47 @@ import "core:fmt"
 
 TAB_OR_SPACE :: "  "
 
-to_c_code :: proc(p: ^Parser, node: Any_Node, b: ^strings.Builder) {
-  #partial switch n in node {
-    case ^Function_Decl:
-      to_c_function(p, n, b)
-    case:
-      fmt.panicf("NOT SUPPORTED YET")
+to_c_code :: proc(p: ^Parser, b: ^strings.Builder) {
+
+  iter := decl_iterator_from_list(&p.decls)
+
+  for decl in decl_iterate_forward(&iter) {
+    #partial switch kind in decl {
+      case ^Function_Decl:
+        to_c_function(p, kind, b)
+      case ^Struct_Decl:
+        to_c_struct(p, kind, b)
+      case:
+        fmt.panicf("NOT SUPPORTED YET")
+    }
+
   }
 }
 
-to_c_var_decl :: proc(p: ^Parser, decl: ^Var_Decl, b: ^strings.Builder) {
+to_c_struct :: proc(p: ^Parser, struct_decl: ^Struct_Decl, b: ^strings.Builder) {
+  struct_name := get_node_name(p, struct_decl)
+  fmt.sbprintf(b, "typedef struct %v %v;\n", struct_name, struct_name)
+  fmt.sbprintf(b, "struct %v {{\n", struct_name)
+
+  iter := field_iterator_from_list(&struct_decl.fields)
+  for field in field_iterate_forward(&iter) {
+    strings.write_string(b, TAB_OR_SPACE)
+    #partial switch kind in field.type {
+      case ^Primitive_Type:
+        to_c_primitive_type(kind^, b)
+      case ^Slice_Type:
+        
+    }
+    strings.write_byte(b, ' ')
+    field_name := get_node_name(p, field)
+    fmt.sbprintf(b, "%v;\n", field_name)
+  }
+
+  strings.write_string(b, "};\n")
+
+}
+
+to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Builder) {
   switch type in decl.type {
     case ^Primitive_Type:
       to_c_primitive_type(type^, b) 
@@ -56,7 +87,8 @@ to_c_var_decl :: proc(p: ^Parser, decl: ^Var_Decl, b: ^strings.Builder) {
       name := get_node_name(p, decl)
       strings.write_string(b, name)
       strings.write_string(b, ";\n")
-
+    case Literal_Type:
+      assert(false)
   }
 }
 
@@ -111,20 +143,26 @@ to_c_function :: proc(p: ^Parser, fn: ^Function_Decl, b: ^strings.Builder) {
   strings.write_string(b, get_node_name(p, fn.node))
 
   strings.write_byte(b, '(')
-  strings.write_byte(b, ' ')
 
-
-  for field, index in fn.params {
-    if field.type != nil {
-      to_c_primitive_type(field.type.(^Primitive_Type)^, b) // fuck it fix this later
+  if fn.params.count != 0 {
+    iter := field_iterator_from_list(&fn.params)
+    counter := 0
+    for field in field_iterate_forward(&iter) {
+      if field.type != nil {
+        to_c_primitive_type(field.type.(^Primitive_Type)^, b) // fuck it fix this later
+      }
+  
+      strings.write_byte(b, ' ')
+      strings.write_string(b, get_node_name(p, field.node))
+  
+      if counter != fn.params.count - 1 {
+        strings.write_string(b, ", ")
+      }
+  
+      counter += 1
     }
-
-    strings.write_byte(b, ' ')
-    strings.write_string(b, get_node_name(p, field.node))
-
-    if index != len(fn.params) - 1 {
-      strings.write_string(b, ", ")
-    }
+  } else {
+    strings.write_string(b, "void")
   }
 
   strings.write_string(b, " )\n")
@@ -139,7 +177,9 @@ to_c_function :: proc(p: ^Parser, fn: ^Function_Decl, b: ^strings.Builder) {
 to_c_block :: proc(p: ^Parser, block: ^Block, b: ^strings.Builder, level := 0) {
   for i in 0..<level do strings.write_string(b, TAB_OR_SPACE)
   strings.write_string(b, "{\n")
-  for stmt in block.stmts {
+  // to do turn into linked list
+  iter := stmt_iterator_from_block(block)
+  for stmt in stmt_iterate_forward(&iter) {
     to_c_stmt(p, stmt, b, level + 1)
   }
   for i in 0..<level do strings.write_string(b, TAB_OR_SPACE)
@@ -173,8 +213,8 @@ to_c_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, level := 0) {
       to_c_expr(p, kind.condition, b)
       strings.write_string(b, " )\n")
       to_c_block(p, kind.body, b, level)
-    case ^Var_Decl:
-      to_c_var_decl(p, kind, b)
+    case ^Local_Var_Decl:
+      to_c_local_var_decl(p, kind, b)
     case ^For_Range_Less_Stmt:
       strings.write_string(b, "for ( long long ")
       counter_name := get_node_name(p, kind.counter)
@@ -189,8 +229,47 @@ to_c_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, level := 0) {
       strings.write_string(b, counter_name)
       strings.write_string(b, "++)\n")
       to_c_block(p, kind.body, b, level)
+    case ^Array_Index_Update_Stmt:
+      array_type_name := get_node_name(p, kind.array_index)
+      strings.write_string(b, array_type_name)
+      strings.write_byte(b, '[')
+
+      to_c_expr(p, kind.array_index.index, b)
+
+      strings.write_string(b, "] ")
+
+      updater_string := get_node_name(p, kind)
+      strings.write_string(b, updater_string)
+      strings.write_byte(b, ' ')
+
       
+      to_c_expr(p, kind.expr, b)
+
+      strings.write_string(b, ";\n");
+    case ^Function_Call:
+      to_c_function_call(p, kind, b)
+      strings.write_string(b, ";\n");
+
   }
+}
+
+to_c_function_call :: proc(p: ^Parser, call: ^Function_Call, b: ^strings.Builder) {
+  fn_name := get_node_name(p, call)
+  strings.write_string(b, fn_name)
+
+  strings.write_byte(b, '(')
+
+  iter := expr_list_iterator_from_list(&call.args)
+  counter := 0
+  for expr in expr_iterate_forward(&iter) {
+    to_c_expr(p, expr.expr, b)
+
+    if counter != call.args.count - 1 do strings.write_byte(b, ',')
+
+    counter += 1
+  }
+
+  strings.write_byte(b, ')') 
 }
 
 to_c_expr :: proc(p: ^Parser, expr: Any_Expr, b: ^strings.Builder) {
@@ -199,13 +278,27 @@ to_c_expr :: proc(p: ^Parser, expr: Any_Expr, b: ^strings.Builder) {
       to_c_expr(p, kind.lhs, b)
       strings.write_byte(b, ' ')
 
-      // make the binary operator a c type
+      // make the binary operator a c-type
       to_c_operator(p, kind, b)
       strings.write_byte(b, ' ')
       to_c_expr(p, kind.rhs, b)
-
     case ^Literal:
-      tkn := p.tokens[kind.tkn_index]
-      strings.write_string(b, string(p.src[tkn.start:tkn.end]))
+      strings.write_string(b, get_node_name(p, kind))
+    case ^Function_Call:
+      to_c_function_call(p, kind, b)
+    case ^Array_Index:
+      array_type_name := get_node_name(p, kind)
+      strings.write_string(b, array_type_name)
+      strings.write_byte(b, '[')
+
+      to_c_expr(p, kind.index, b)
+
+      strings.write_byte(b, ']')
+    case ^Type_Conv_Expr:
+      strings.write_string(b, "((")
+      to_c_primitive_type(kind.type^, b)
+      strings.write_byte(b, ')')
+      to_c_expr(p, kind.expr, b)
+      strings.write_string(b, ")")
   }
 }
