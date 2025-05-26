@@ -1,0 +1,5 @@
+Person struct {
+  age: u32,
+  name: string,
+}
+

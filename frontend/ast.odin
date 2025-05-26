@@ -12,9 +12,17 @@ package frontend
 import "base:runtime"
 
 Token_Index :: u32
+Float :: f64
+Int :: i64
+
 
 Node :: struct {
   tkn_index: Token_Index,
+}
+
+Function_Decl_Flags :: bit_set[Function_Decl_Flag; u8]
+Function_Decl_Flag :: enum u8 {
+  Extern,
 }
 
 Any_Node :: union #shared_nil {
@@ -26,6 +34,7 @@ Any_Node :: union #shared_nil {
 Any_Decl :: union #shared_nil {
   ^Function_Decl,
   ^Struct_Decl,
+  ^Enum_Decl,
   ^Global_Var_Decl,
 }
 
@@ -33,6 +42,8 @@ Any_Expr :: union #shared_nil {
   ^Binary_Expr,
   ^Literal,
   ^Function_Call,
+  ^Pointer_Ref,
+  ^Pointer_Deref,
   ^Array_Index,
   ^Type_Conv_Expr
 }
@@ -46,6 +57,16 @@ Any_Stmt :: union #shared_nil {
   ^Local_Var_Decl,
   ^For_Range_Less_Stmt,
   ^Function_Call,
+}
+
+Pointer_Ref :: struct {
+  using node: Node,
+  expr: Any_Expr,
+}
+
+Pointer_Deref :: struct {
+  using node: Node,
+  ptr_lit: Literal,
 }
 
 Array_Index :: struct {
@@ -63,9 +84,13 @@ Binary_Expr :: struct {
   lhs, rhs: Any_Expr
 }
 
+/* 
+  Todo make sure to check errors and have correct conversion
+  during semantic analysis
+*/
 Type_Conv_Expr :: struct {
   using node: Node,
-  type: ^Primitive_Type,
+  type: ^Number_Type,
   expr: Any_Expr
 }
 
@@ -74,13 +99,25 @@ Expr_List_Node :: struct {
   expr: Any_Expr,
 }
 
+Named_Expr_List_Node :: struct {
+  using node: Node,
+  next: ^Named_Expr_List_Node,
+  expr: Any_Expr,
+}
+
+Named_Expr_List :: struct  {
+  head, tail: ^Named_Expr_List_Node,
+  count: int
+}
+
 Expr_List :: struct {
   head, tail: ^Expr_List_Node,
   count: int
 }
 
+
 Literal :: struct {
-  using node: Node
+  using node: Node,
 }
 
 Field :: struct {
@@ -176,8 +213,13 @@ Struct_Decl :: struct {
   fields: Field_List,
 }
 
+Enum_Decl :: struct {
+  using decl: Decl,
+  values: Named_Expr_List,
+}
+
 Global_Var_Decl :: struct {
-  using Decl: Decl,
+  using decl: Decl,
   type: Type,
   init: Any_Expr,
 }
@@ -335,6 +377,44 @@ expr_iterate_forward :: proc(iter: ^Expr_Iterator) -> (expr: ^Expr_List_Node, ok
 }
 
 expr_append :: proc(exprs: ^Expr_List, expr: ^Expr_List_Node) {
+  if exprs.tail == nil {
+    assert(exprs.head == nil) 
+
+    exprs.head = expr
+    exprs.tail = expr
+  } else {
+    old_tail := exprs.tail
+    old_tail.next = expr
+    exprs.tail = expr
+  }
+
+  exprs.count += 1
+}
+
+
+Named_Expr_Iterator :: struct {
+  expr: ^Named_Expr_List_Node
+}
+
+named_expr_list_iterator_from_list :: proc(exprs: ^Named_Expr_List) -> Named_Expr_Iterator {
+  return named_expr_iterator_from_head(exprs.head)
+}
+
+named_expr_iterator_from_head :: proc(head: ^Named_Expr_List_Node) -> Named_Expr_Iterator {
+  return Named_Expr_Iterator{expr = head}
+}
+
+named_expr_iterate_forward :: proc(iter: ^Named_Expr_Iterator) -> (expr: ^Named_Expr_List_Node, ok: bool) {
+  if iter.expr == nil {
+    return nil, false
+  } else {
+    result := iter.expr
+    iter.expr = iter.expr.next
+    return result, true
+  }
+}
+
+named_expr_append :: proc(exprs: ^Named_Expr_List, expr: ^Named_Expr_List_Node) {
   if exprs.tail == nil {
     assert(exprs.head == nil) 
 

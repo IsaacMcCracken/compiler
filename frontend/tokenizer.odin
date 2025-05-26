@@ -1,8 +1,11 @@
 package frontend
 
 import "core:mem"
+import "core:fmt"
 import "core:unicode"
-// square :: func(x: int) -> int
+import "core:strconv"
+
+
 Token_Kind :: enum u32 {
   Invalid,
   Identifier,
@@ -20,11 +23,18 @@ Token_Kind :: enum u32 {
   Left_Brace,
   Right_Brace,
   
+  Carrot,
+
   // most likely math operators
   Plus,
   Minus,
   Star,
   Slash,
+
+  // Bitwise Operators
+  Pipe,
+  Ambersand,
+
 
 
   // Logical Operators
@@ -46,7 +56,8 @@ Token_Kind :: enum u32 {
   Equals,
 
 
-  Number, // there is more here
+  Integer_Literal,
+  Float_Literal,
 
   // primitive types
   Int,
@@ -64,8 +75,10 @@ Token_Kind :: enum u32 {
   F32,
   F64,
 
+  C_Args,
   Func,
   Struct,
+  Enum,
   Arrow,
 
   // control flow
@@ -97,11 +110,16 @@ tokenizer_init :: proc(t: ^Tokenizer, filename: string, src: []byte) {
 }
 
 tokenizer_number :: proc(t: ^Tokenizer) {
-  for t.curr < u32(len(t.src)) && unicode.is_digit(rune(t.src[t.curr])) {
+  type := Token_Kind.Integer_Literal
+  for t.curr < u32(len(t.src)) && 
+  (unicode.is_digit(rune(t.src[t.curr])) || t.src[t.curr] == '.') {
+    if t.src[t.curr] == '.' {
+      type = Token_Kind.Float_Literal
+    } 
     t.curr += 1
   }
 
-  append_token(t, .Number)
+  append_token(t, type)
 }
 
 tokenize :: proc(t: ^Tokenizer) {
@@ -116,6 +134,9 @@ tokenize :: proc(t: ^Tokenizer) {
       
       case '0'..='9':
         tokenizer_number(t)
+      case '^':
+        t.curr += 1
+        append_token(t, .Carrot)
       case ':':
         t.curr += 1
         append_token(t, .Colon)
@@ -234,15 +255,23 @@ tokenize :: proc(t: ^Tokenizer) {
         } else {
           append_token(t, .Slash)
         }
+      case '&':
+        t.curr += 1
+        append_token(t, .Ambersand)
+      case '|':
+        t.curr += 1
+        append_token(t, .Pipe)
       case 0:
         break scan
+      case:
+        fmt.panicf("what character is this %c", t.src[t.curr])
     }
 
   }
 }
 
 tokenizer_identifier_or_keyword :: proc(t: ^Tokenizer) {
-  for t.curr < u32(len(t.src)) && (unicode.is_alpha(rune(t.src[t.curr])) || unicode.is_number(rune(t.src[t.curr]))) {
+  for t.curr < u32(len(t.src)) && (unicode.is_alpha(rune(t.src[t.curr])) || unicode.is_number(rune(t.src[t.curr]))) || t.src[t.curr] == '_' {
     t.curr += 1
   }
 

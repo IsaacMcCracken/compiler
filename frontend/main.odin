@@ -13,9 +13,9 @@ main :: proc() {
   args := os.args
 
 
-  contents, ok := os.read_entire_file("smpl/fnprototype.kot")
+  contents, ok := os.read_entire_file("smpl/expression.kot")
   tokenizer: Tokenizer
-  tokenizer_init(&tokenizer, "fnprototype.kot", contents)
+  tokenizer_init(&tokenizer, "expression.kot", contents)
 
   tokenize(&tokenizer)
 

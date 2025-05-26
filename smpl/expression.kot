@@ -1,0 +1,6 @@
+
+
+evaltest :: func(x: int) -> int {
+  return 21 * 20 + x
+}
+

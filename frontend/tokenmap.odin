@@ -3,8 +3,10 @@ package frontend
 
 
 tmap := map[string]Token_Kind {
+  "c_args" = .C_Args,
   "func" = .Func,
   "struct" = .Struct,
+  "enum" = .Enum,
   "for" = .For,
   "in" = .In,
   "return" = .Return,

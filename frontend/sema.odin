@@ -5,6 +5,7 @@ import ll "core:container/intrusive/list"
 import "core:odin/ast"
 import "base:runtime"
 import "core:fmt"
+import "core:mem"
 
 
 /*
@@ -41,6 +42,7 @@ Sema :: struct {
   items: [dynamic]Scope_Item,
   functions: map[string]^Function_Decl,
   gpa: runtime.Allocator,
+  literal_pool: mem.Dynamic_Pool
 
 }
 
@@ -82,12 +84,22 @@ sema_analyze :: proc(p: ^Parser) {
       case ^Global_Var_Decl:
         sema_item_push(p, get_node_name(p, kind), kind.type)
       case ^Struct_Decl:
+      case ^Enum_Decl:
     }
   }
 }
 
 sema_analyze_function :: proc(p: ^Parser, fn: ^Function_Decl) -> bool {
+  before_sema_items_len := len(p.sema.items)
+  defer resize(&p.sema.items, before_sema_items_len)
+  
+
+  iter := field_iterator_from_list(&fn.params)
+  for param in field_iterate_forward(&iter) {
+    sema_item_push(p, get_node_name(p, param), param.type)
+  }
   return sema_analyze_block(p, fn.body)
+  
 }
 
 sema_check_function_call :: proc(p: ^Parser, call: ^Function_Call) -> bool {
@@ -115,13 +127,7 @@ sema_check_function_call :: proc(p: ^Parser, call: ^Function_Call) -> bool {
     }
 
 
-    type, ok := sema_check_expression(p, arg.expr)
-    if !ok {
-      //error
-      // error(" ")
-      return false
-    }
-
+    type := sema_check_expression(p, arg.expr)
 
     if field.type != type {
       // error
@@ -163,7 +169,7 @@ sema_analyze_block :: proc(p: ^Parser, block: ^Block) -> bool {
         sema_check_expression(p, kind.condition)
         sema_analyze_block(p, kind.body)
       case ^For_Range_Less_Stmt:
-        sema_item_push(p, get_node_name(p, kind.counter), &primitive_type_map[.Int])
+        sema_item_push(p, get_node_name(p, kind.counter), &number_type_map[.Int])
         sema_analyze_block(p, kind.body)
         pop(&p.sema.items)
       case ^Function_Call:
@@ -175,45 +181,99 @@ sema_analyze_block :: proc(p: ^Parser, block: ^Block) -> bool {
   return true
 }
 
-sema_check_expression :: proc(p: ^Parser, expr: Any_Expr) -> (type: Type, ok: bool) {
+sema_literal_conversion :: proc(lit: Literal_Type, num: ^Number_Type) -> (type: Type) {
+  if num.float {
+    #partial switch lit {
+      case .Any_Float, .Any_Integer:
+        return num
+    }
+  } else {
+
+    // TODO(ISAAC) Consider signedness
+    if lit == .Any_Integer do return num 
+  }
+
+  return nil
+}
+
+sema_check_expression :: proc(p: ^Parser, expr: Any_Expr, parent: Any_Expr = nil) -> (type: Type) {
   switch kind in expr {
     case ^Binary_Expr:
-      lhs_type, lhs_ok := sema_check_expression(p, kind.lhs)
-      if !lhs_ok do return nil, true
-      rhs_type, rhs_ok := sema_check_expression(p, kind.rhs)
-      if rhs_type == lhs_type do return lhs_type, true
+      lhs_type := sema_check_expression(p, kind.lhs, kind)
+      rhs_type := sema_check_expression(p, kind.rhs, kind)
+
+      if lhs_type == rhs_type do return lhs_type
+      // Since we are not doing operations every type conversion is communitive/assosittive
+      
+      // lets switch the types to make this easier
+      _, rhs_is_lit := rhs_type.(Literal_Type)
+      if rhs_is_lit do lhs_type, rhs_type = rhs_type, lhs_type 
+
+      // Literal To Number Conversion
+      #partial switch lt in lhs_type {
+        case Literal_Type:
+          #partial switch rt in rhs_type {
+            case ^Number_Type:
+              return sema_literal_conversion(lt, rt)
+            case Literal_Type:
+              if lt == rt do return lt
+              if lt == .Any_Float && rt == .Any_Integer do return .Any_Float
+              if lt == .Any_Integer && rt == .Any_Float do return .Any_Float
+              fmt.println("Cannot convert")
+            case:
+              fmt.println("Cannot do something")
+          }
+      }
+
+      return nil
     case ^Function_Call:
       ok := sema_check_function_call(p, kind)
-      
+    
+    case ^Pointer_Deref:
+      ptr_name := get_node_name(p, kind.ptr_lit)
+      item, ok := sema_item_in_scope(p, ptr_name)
+      assert(ok)
+      ptr_type := item.type.(^Pointer_Type)
+      return ptr_type.base
     case ^Array_Index:
       array_name := get_node_name(p, kind)
       item, ok := sema_item_in_scope(p, array_name)
       assert(ok)
       #partial switch type in item.type {
         case ^Slice_Type:
-          return type.base, true
+          return type.base
         case ^Array_Type:
-          return type.base, true
+          return type.base
         case:
           assert(false)
       }
     case ^Literal:
       tok := p.tokens[kind.tkn_index]
       
-      if tok.kind == .Number {
-        return .Any_Number, true
+      if tok.kind == .Integer_Literal {
+        return .Any_Integer
+      }
+
+      if tok.kind == .Float_Literal {
+        return .Any_Float
       }
       
       variable_name := get_node_name(p, kind)
       item, ok := sema_item_in_scope(p, variable_name)
       
-      if ok {
-        return item.type, true
+      if !ok {
+        fmt.println("Error: the variable", variable_name, "is not in scope.")
+        return nil
       }
+
+      return item.type
     case ^Type_Conv_Expr:
-      return kind.type, true
+
+      return kind.type
+    case ^Pointer_Ref:
+      return nil
 
   }
 
-  return nil, false
+  return nil
 }

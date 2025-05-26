@@ -1,11 +1,38 @@
-factorial :: func(n: s32) -> s32 {
-  slice: []s32
-  
-  x: s32 = 1
+Person :: struct {
+  age: int,
+  name: []u8,
+}
 
-  for i in 0..<n + 1 {
-    x *= n-i
+AnimalKind :: enum {
+  Dog = 42,
+  Human = 420,
+  Monkey = 69
+}
+
+factorial :: func(n: s32) -> s32 {
+  if n <= 2 {
+    return 1
   }
-  return x
+  return n + factorial(n - 1)
+}
+
+
+nothing :: func() {
+
+}
+
+square :: func(x: s32) -> s32 {
+  return x * x
+}
+
+main :: func() -> s32 {
+  array: [12]int
+
+  ptr: ^int = &array[0]
+  array[2 + 4] += int(8) + (1 + 2 * 69)
+  x: int = square(array[2 + 4 + ptr^])
+
+  nothing(2)
+  return 0
 }
 

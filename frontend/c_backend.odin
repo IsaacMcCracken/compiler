@@ -7,8 +7,10 @@ import "core:fmt"
 
 TAB_OR_SPACE :: "  "
 
-to_c_code :: proc(p: ^Parser, b: ^strings.Builder) {
+@private c_prelude := #load("prelude.c")
 
+to_c_code :: proc(p: ^Parser, b: ^strings.Builder) {
+  strings.write_bytes(b, c_prelude)
   iter := decl_iterator_from_list(&p.decls)
 
   for decl in decl_iterate_forward(&iter) {
@@ -17,11 +19,37 @@ to_c_code :: proc(p: ^Parser, b: ^strings.Builder) {
         to_c_function(p, kind, b)
       case ^Struct_Decl:
         to_c_struct(p, kind, b)
+      case ^Enum_Decl:
+        to_c_enum(p, kind, b)
       case:
         fmt.panicf("NOT SUPPORTED YET")
     }
 
   }
+}
+
+to_c_enum :: proc(p: ^Parser, enum_decl: ^Enum_Decl, b: ^strings.Builder) {
+
+  enum_name := get_node_name(p, enum_decl)
+
+  fmt.sbprintf(b, "typedef int %v;\nenum {{\n", enum_name)
+
+  iter := named_expr_list_iterator_from_list(&enum_decl.values) 
+
+  for named_expr in named_expr_iterate_forward(&iter) {
+    value_name := get_node_name(p, named_expr)
+    strings.write_string(b, TAB_OR_SPACE)
+    fmt.sbprintf(b, "%v_%v", enum_name, value_name)
+
+    if named_expr.expr != nil {
+      strings.write_string(b, " = ")
+      to_c_expr(p, named_expr.expr, b)
+    }
+
+    strings.write_string(b, ",\n")
+  }
+
+  strings.write_string(b, "};\n")
 }
 
 to_c_struct :: proc(p: ^Parser, struct_decl: ^Struct_Decl, b: ^strings.Builder) {
@@ -33,8 +61,8 @@ to_c_struct :: proc(p: ^Parser, struct_decl: ^Struct_Decl, b: ^strings.Builder) 
   for field in field_iterate_forward(&iter) {
     strings.write_string(b, TAB_OR_SPACE)
     #partial switch kind in field.type {
-      case ^Primitive_Type:
-        to_c_primitive_type(kind^, b)
+      case ^Number_Type:
+        to_c_number_type(kind^, b)
       case ^Slice_Type:
         
     }
@@ -49,8 +77,8 @@ to_c_struct :: proc(p: ^Parser, struct_decl: ^Struct_Decl, b: ^strings.Builder) 
 
 to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Builder) {
   switch type in decl.type {
-    case ^Primitive_Type:
-      to_c_primitive_type(type^, b) 
+    case ^Number_Type:
+      to_c_number_type(type^, b) 
       strings.write_byte(b, ' ')
       name := get_node_name(p, decl)
       strings.write_string(b, name)
@@ -62,10 +90,26 @@ to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Build
         strings.write_string(b, " = 0")
       }
       strings.write_string(b, ";\n")
+    case ^Pointer_Type:
+      base := type.base.(^Number_Type)
+      to_c_number_type(base^, b)
+      strings.write_string(b, " *")
+      name := get_node_name(p, decl)
+      strings.write_string(b, name)
+
+      if decl.init == nil {
+        strings.write_string(b, " = 0;")
+      } else {
+        strings.write_string(b, " = ")
+        to_c_expr(p, decl.init, b)
+        strings.write_string(b, ";\n")
+
+      }
+
     case ^Array_Type:
       // fix this
-      base := type.base.(^Primitive_Type) // obviously figure out logic for more compounds
-      to_c_primitive_type(base^, b) 
+      base := type.base.(^Number_Type) // obviously figure out logic for more compounds
+      to_c_number_type(base^, b) 
       strings.write_byte(b, ' ')
       name := get_node_name(p, decl)
       strings.write_string(b, name)
@@ -82,7 +126,7 @@ to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Build
         struct { base *ptr, unsigned long long len } var_name;
       */
       strings.write_string(b, "struct {")
-      to_c_primitive_type(type.base.(^Primitive_Type)^, b)
+      to_c_number_type(type.base.(^Number_Type)^, b)
       strings.write_string(b, " *ptr; unsigned long long len;} ")
       name := get_node_name(p, decl)
       strings.write_string(b, name)
@@ -92,28 +136,21 @@ to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Build
   }
 }
 
-to_c_primitive_type :: proc(type: Primitive_Type, b: ^strings.Builder) {
-  switch kind in type {
-    case Float_Type:
-      switch kind.size {
-        case 2:
-          strings.write_string(b, "float")
-        case 3:
-          strings.write_string(b, "double")
-        case:
-          fmt.panicf("unknown float type with size %v", kind.size)
-      }
-    case Integer_Type:
-      if kind.signed == false {
-        strings.write_string(b, "unsigned ")
-      }
+to_c_number_type :: proc(type: Number_Type, b: ^strings.Builder) {
+  if type.float {
+    switch type.size {
+      case 2:
+        strings.write_string(b, "float")
+      case 3:
+        strings.write_string(b, "double")
+    }
+  } else {
+    if !type.signed do strings.write_string(b, "u")
+    strings.write_string(b, "int")
+    strings.write_int(b, 1 << (uint(type.size) + 3))
+    strings.write_string(b, "_t")
 
-      switch kind.size {
-        case 0: strings.write_string(b, "char")
-        case 1: strings.write_string(b, "short")
-        case 2: strings.write_string(b, "int")
-        case 3: strings.write_string(b, "long long")
-      }
+    
   }
 }
 
@@ -135,7 +172,7 @@ to_c_function :: proc(p: ^Parser, fn: ^Function_Decl, b: ^strings.Builder) {
   if fn.ret_type == nil {
     strings.write_string(b, "void")
   } else {
-    to_c_primitive_type(fn.ret_type.(^Primitive_Type)^, b) // fuck it we will fix this later
+    to_c_number_type(fn.ret_type.(^Number_Type)^, b) // fuck it we will fix this later
   }
 
   strings.write_byte(b, ' ')
@@ -149,7 +186,7 @@ to_c_function :: proc(p: ^Parser, fn: ^Function_Decl, b: ^strings.Builder) {
     counter := 0
     for field in field_iterate_forward(&iter) {
       if field.type != nil {
-        to_c_primitive_type(field.type.(^Primitive_Type)^, b) // fuck it fix this later
+        to_c_number_type(field.type.(^Number_Type)^, b) // fuck it fix this later
       }
   
       strings.write_byte(b, ' ')
@@ -286,6 +323,18 @@ to_c_expr :: proc(p: ^Parser, expr: Any_Expr, b: ^strings.Builder) {
       strings.write_string(b, get_node_name(p, kind))
     case ^Function_Call:
       to_c_function_call(p, kind, b)
+      
+    case ^Pointer_Deref:
+      strings.write_string(b, "(*")
+      lit_name := get_node_name(p, kind.ptr_lit)
+      strings.write_string(b, lit_name)
+      strings.write_byte(b, ')')
+    
+      case ^Pointer_Ref:
+        strings.write_byte(b, '&')
+        to_c_expr(p, kind.expr, b)
+        // strings.write_string(b, lit_name)
+
     case ^Array_Index:
       array_type_name := get_node_name(p, kind)
       strings.write_string(b, array_type_name)
@@ -296,7 +345,7 @@ to_c_expr :: proc(p: ^Parser, expr: Any_Expr, b: ^strings.Builder) {
       strings.write_byte(b, ']')
     case ^Type_Conv_Expr:
       strings.write_string(b, "((")
-      to_c_primitive_type(kind.type^, b)
+      to_c_number_type(kind.type^, b)
       strings.write_byte(b, ')')
       to_c_expr(p, kind.expr, b)
       strings.write_string(b, ")")
