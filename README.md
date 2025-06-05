@@ -7,57 +7,86 @@ The videos are very boring, but I am learning.
 so far we got this code
 
 ```go
-factorial :: func(n: s32) -> s32 {
+Vector2 :: struct {
+  x: f32,
+  y: f32
+}
+
+Animal_Kind :: enum {
+  Dog = 42,
+  Human = 420,
+  Monkey = 69
+}
+
+Animal :: struct {
+  pos: Vector2,
+  age: s8
+}
+
+fibonacci :: func(n: s32) -> s32 {
   if n <= 2 {
     return 1
   }
-  return n + factorial(n - 1)
+  return n + fibonacci(n - 1)
 }
 
 
-nothing :: func() {
-
-}
 
 square :: func(x: s32) -> s32 {
   return x * x
 }
 
 main :: func() -> s32 {
-  array: [12]int
 
-  array[2 + 4] += int(8) + (1 + 2 * 69)
-  x: int = square(array[2 + 4])
+  a: Animal
+  a.age = s8(fibonacci(4))
+  a.pos.x = square(3)
+  a.pos.y = 42.0
 
-  nothing(2)
   return 0
 }
+
+
+
+
+
 ```
 
 transpiling into this code 
 
 ```c
-int factorial(int n )
+struct Vector2 {
+  float x;
+  float y;
+};
+typedef int Animal_Kind;
+enum {
+  Animal_Kind_Dog = 42,
+  Animal_Kind_Human = 420,
+  Animal_Kind_Monkey = 69,
+};
+struct Animal {
+  struct Vector2 pos;
+  int8_t age;
+};
+int32_t fibonacci(int32_t n )
 {
   if ( n <= 2 )
   {
     return 1;
   }
-  return n + factorial(n - 1);
+  return n + fibonacci(n - 1);
 }
-void nothing(void )
-{
-}
-int square(int x )
+int32_t square(int32_t x )
 {
   return x * x;
 }
-int main(void )
+int32_t main(void )
 {
-  long long array[12] = {0};
-  array[2 + 4] += ((long long)8) + 1 + 2 * 69;
-  long long x = square(array[2 + 4]);
-  nothing(2);
+  struct Animal a = { 0 };
+  a.age = ((int8_t)fibonacci(4));
+  a.pos.x = square(3);
+  a.pos.y = 42.0;
   return 0;
 }
 ```
