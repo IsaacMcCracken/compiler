@@ -117,6 +117,7 @@ sema_check_types :: proc(p: ^Parser, a, b: Type) -> (ok: bool) {
     case ^Array_Type:
       #partial switch btype in b {
         case ^Array_Type:
+          if atype.len != btype.len do return false
           return sema_check_types(p, atype.base, btype.base)
         case: return false
       }
@@ -494,7 +495,10 @@ sema_analyze_block :: proc(p: ^Parser, block: ^Block, ret_type: Type /* nil if n
           expr_type_name, expr_string := get_type_string(p, expr_type), get_expr_string(p, kind.expr)
           error(p, get_token(p, kind.tkn_index), "A expression '%v' of type '%v' cannot update '%v' of type '%v'.", expr_string, expr_type_name, obj_name, obj_type_name)
           ok = false
+        } else {
+          kind.type = obj_type
         }
+
       case ^If_Stmt:
         if sema_check_expression(p, kind.condition) == nil do ok = false
         if !sema_analyze_block(p, kind.body, ret_type) do ok = false
@@ -539,31 +543,25 @@ sema_check_expression :: proc(p: ^Parser, expr: Any_Expr) -> (type: Type) {
 
       if lhs_type == nil || rhs_type == nil do return nil
 
-      if lhs_type == rhs_type do return lhs_type
-      // Since we are not doing operations every type conversion is communitive/assosittive
-      
-      // lets switch the types to make this easier
-      
-      _, rhs_is_lit := rhs_type.(Literal_Type)
-      if rhs_is_lit do lhs_type, rhs_type = rhs_type, lhs_type 
 
-      // Literal To Number Conversion
-      #partial switch lt in lhs_type {
-        case Literal_Type:
-          #partial switch rt in rhs_type {
-            case ^Number_Type:
-              return sema_literal_conversion(lt, rt)
-            case Literal_Type:
-              if lt == rt do return lt
-              if lt == .Any_Float && rt == .Any_Integer do return .Any_Float
-              if lt == .Any_Integer && rt == .Any_Float do return .Any_Float
-              fmt.println("Cannot convert")
-            case:
-              fmt.println("Cannot do something")
-          }
+      if !sema_check_types(p, lhs_type, rhs_type) {
+        // lhs_name, rhs_name := get_type_string(p, lhs_type), get_type_string(p, rhs_type)
+        expr_string := get_expr_string(p, kind)
+        error(p, get_token(p, kind.tkn_index), "the expression '%v' has conflicting types/", expr_string)
+        return nil
       }
 
-      return nil
+      type = lhs_type
+      #partial switch math_type in type {
+        case ^Array_Type:
+        case ^Number_Type:
+        case:
+          expr_string, type_name := get_expr_string(p, kind), get_type_string(p, type)
+          error(p, get_token(p, kind.tkn_index), "in expression '%v' has a non aritmetic type '%v'", expr_string, type_name)
+          return nil
+      }
+
+      return type
     case ^Function_Call:
       type, ok := sema_check_function_call(p, kind)
       if !ok do return nil

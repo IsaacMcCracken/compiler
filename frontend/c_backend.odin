@@ -7,6 +7,18 @@ import "core:fmt"
 
 TAB_OR_SPACE :: "  "
 
+@private vector_op_string_map := #partial [Token_Kind]string {
+  .Plus = "add",
+  .Minus = "sub",
+  .Star = "mul",
+  .Slash = "div",
+  .Plus_Equals = "add",
+  .Minus_Equals = "sub",
+  .Times_Equals = "mul",
+  .Slash_Equals = "div",
+  .Equals = "cpy",
+}
+
 @private c_prelude := #load("prelude.c")
 
 to_c_code :: proc(p: ^Parser, b: ^strings.Builder) {
@@ -90,6 +102,8 @@ to_c_type :: proc(p: ^Parser, type: Type, b: ^strings.Builder) {
       for i in 0..<n {
         strings.write_byte(b, '*')
       }
+      case ^Array_Type:
+        base := kind.base.(^Number_Type)
   }
 }
 
@@ -114,7 +128,7 @@ to_c_local_or_field_type :: proc(p: ^Parser, type: Type, obj_name: string, b: ^s
     }
 }
 
-to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Builder) {
+to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Builder, indent := 0) {
   assert(decl.type != nil)
   switch type in decl.type {
     case ^Number_Type:
@@ -131,11 +145,7 @@ to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Build
       }
       strings.write_string(b, ";\n")
     case ^Pointer_Type:
-      base := type.base.(^Number_Type)
-      to_c_number_type(base^, b)
-      strings.write_string(b, " *")
-      name := get_node_name(p, decl)
-      strings.write_string(b, name)
+      to_c_type(p, type, b)
 
       if decl.init == nil {
         strings.write_string(b, " = 0;")
@@ -154,17 +164,18 @@ to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Build
       to_c_local_or_field_type(p, decl.type, name, b)
 
       if decl.init == nil {
-        strings.write_string(b, " = {0}")
+        strings.write_string(b, " = {0};\n")
       } else {
-        strings.write_string(b, " = ")
-        to_c_expr(p, decl.init, b)
+        strings.write_string(b, ";\n")
+        to_c_vector_stmt(p, decl, b, indent)
       }
-      strings.write_string(b, ";\n")
     case ^Slice_Type:
       // declaration
       /*
         struct { base *ptr, unsigned long long len } var_name;
       */
+
+      // TODO(make there be a prelude type buffer so that we can make good type stuff)
       strings.write_string(b, "struct {")
       to_c_number_type(type.base.(^Number_Type)^, b)
       strings.write_string(b, " *ptr; unsigned long long len;} ")
@@ -290,15 +301,20 @@ to_c_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, level := 0) {
       to_c_expr(p, kind.expr, b)
       strings.write_string(b, ";\n")
     case ^Update_Stmt:
-      to_c_expr(p, kind.obj, b)
-      strings.write_byte(b, ' ')
-
-      updater := get_node_name(p, kind)
-      strings.write_string(b, updater)
-      strings.write_byte(b, ' ')
-
-      to_c_expr(p, kind.expr, b)
-      strings.write_string(b, ";\n")
+      #partial switch type in kind.type {
+        case ^Array_Type:
+          to_c_vector_stmt(p, kind, b, level)
+        case:
+          to_c_expr(p, kind.obj, b)
+          
+          updater := get_node_name(p, kind)
+          strings.write_byte(b, ' ')
+          strings.write_string(b, updater)
+          strings.write_byte(b, ' ')
+    
+          to_c_expr(p, kind.expr, b)
+          strings.write_string(b, ";\n")
+      }
     case ^If_Stmt:
       strings.write_string(b, "if ( ")
       to_c_expr(p, kind.condition, b)
@@ -313,7 +329,7 @@ to_c_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, level := 0) {
       strings.write_string(b, "else\n")
       to_c_block(p, kind.body, b, level)
     case ^Local_Var_Decl:
-      to_c_local_var_decl(p, kind, b)
+      to_c_local_var_decl(p, kind, b, level)
     case ^For_Range_Less_Stmt:
       strings.write_string(b, "for ( long long ")
       counter_name := get_node_name(p, kind.counter)
@@ -353,6 +369,149 @@ to_c_function_call :: proc(p: ^Parser, call: ^Function_Call, b: ^strings.Builder
   }
 
   strings.write_byte(b, ')') 
+}
+
+to_c_vector_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, indent: int) {
+  #partial switch kind in stmt {
+    case ^Local_Var_Decl:
+      for i in 0..<indent do strings.write_string(b, TAB_OR_SPACE)
+      // Start Expression
+      strings.write_string(b, "{\n")
+
+      local_name := get_node_name(p, kind)
+      to_c_vector_expr(p, kind.init, kind.type.(^Array_Type), local_name, b, indent + 1)
+
+      
+      for i in 0..<indent do strings.write_string(b, TAB_OR_SPACE)
+      strings.write_string(b, "}\n")
+      // End Expression
+
+    case ^Update_Stmt:
+      strings.write_byte(b, '\n')
+      for i in 0..<indent do strings.write_string(b, TAB_OR_SPACE)
+      // Start Expression
+      strings.write_string(b, "{\n")
+      arr_type := kind.type.(^Array_Type)
+      base_name := get_type_string(p, arr_type.base)
+      tok := get_token(p, kind.tkn_index)
+
+      TEMP_VECTOR_STRING :: "___temp_vector___"
+      obj_str := get_expr_string(p, kind.obj)
+      for i in 0..<indent + 1 do strings.write_string(b, TAB_OR_SPACE)
+      #partial switch op in kind.expr {
+        case ^Binary_Expr:
+
+          
+          #partial switch tok.kind {
+            case .Plus_Equals, .Minus_Equals, .Times_Equals, .Slash_Equals:
+              to_c_local_or_field_type(p, arr_type, TEMP_VECTOR_STRING, b)
+              strings.write_string(b, ";\n")
+              to_c_vector_expr(p, kind.expr, arr_type, TEMP_VECTOR_STRING, b, indent + 1)
+              for i in 0..<indent + 1 do strings.write_string(b, TAB_OR_SPACE)
+    
+              fmt.sbprintf(
+                b,
+                "__%s_vector_%s__(%s, %s, %s, %d);\n",
+                base_name,
+                vector_op_string_map[tok.kind],
+                obj_str,
+                TEMP_VECTOR_STRING,
+                obj_str,
+                arr_type.len,
+              )
+            case .Equals:
+              to_c_vector_expr(p, kind.expr, arr_type, obj_str, b, indent + 1)
+          }
+        case: 
+          rhs_str := get_expr_string(p, kind.expr)
+          #partial switch tok.kind {
+            case .Plus_Equals, .Minus_Equals, .Times_Equals, .Slash_Equals:
+              fmt.sbprintf(
+                b,
+                "__%s_vector_%s__(%s, %s, %s, %d);\n",
+                base_name,
+                vector_op_string_map[tok.kind],
+                obj_str,
+                rhs_str,
+                obj_str,
+                arr_type.len,
+              )
+            case .Equals:
+              fmt.sbprintf(
+                b,
+                "__%s_vector_cpy__(%s, %s, %d);\n",
+                base_name,
+                obj_str,
+                rhs_str,
+                arr_type.len
+              )
+          }
+      }
+      
+    
+      for i in 0..<indent do strings.write_string(b, TAB_OR_SPACE)
+      strings.write_string(b, "}\n")
+      // End Expression
+
+  }
+}
+
+to_c_vector_expr :: proc(
+  p: ^Parser,
+  expr: Any_Expr,
+  arr_type: ^Array_Type,
+  out_str: string,
+  b: ^strings.Builder,
+  indent: int,
+  n := 0
+  ) {
+
+  #partial switch kind in expr {
+    case ^Binary_Expr:
+      lhs_string, rhs_string: string
+
+      #partial switch lhs in kind.lhs  {
+        case ^Binary_Expr:
+          // declare lhs vector
+          for i in 0..<indent do strings.write_string(b, TAB_OR_SPACE)
+          lhs_string = fmt.tprintf("___%s_lhs_temp_vector_%d___", get_type_string(p, arr_type.base), n)
+          to_c_local_or_field_type(p, arr_type, lhs_string, b)
+          strings.write_string(b, ";\n")
+        case:
+          lhs_string = get_expr_string(p, lhs)
+      }
+      to_c_vector_expr(p, kind.lhs, arr_type, lhs_string, b, indent, n + 1)
+
+      #partial switch rhs in kind.rhs  {
+        case ^Binary_Expr:
+          // declare lhs vector
+          for i in 0..<indent do strings.write_string(b, TAB_OR_SPACE)
+          rhs_string = fmt.tprintf("___%s_rhs_temp_vector_%d___", get_type_string(p, arr_type.base), n)
+          to_c_local_or_field_type(p, arr_type, rhs_string, b)
+          strings.write_string(b, ";\n")
+        case:
+          rhs_string = get_expr_string(p, rhs)
+      }
+      to_c_vector_expr(p, kind.rhs, arr_type, rhs_string, b, indent, n + 1)
+
+
+
+      tok := get_token(p, kind.tkn_index)
+      op_str := vector_op_string_map[tok.kind]
+      base := arr_type.base.(^Number_Type)
+      base_type_name := get_type_string(p, base)
+
+      for i in 0..<indent do strings.write_string(b, TAB_OR_SPACE)
+      fmt.sbprintf(
+        b, 
+        "__%s_vector_%s__(%s, %s, %s, %d);\n",
+        base_type_name,
+        op_str, lhs_string,
+        rhs_string,
+        out_str,
+        arr_type.len
+      )
+  }
 }
 
 to_c_expr :: proc(p: ^Parser, expr: Any_Expr, b: ^strings.Builder) {

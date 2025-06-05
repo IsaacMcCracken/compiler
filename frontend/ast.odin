@@ -184,7 +184,8 @@ For_Range_Less_Stmt :: struct {
 Update_Stmt :: struct {
   using stmt: Stmt,
   obj: Any_Expr, 
-  expr: Any_Expr
+  expr: Any_Expr,
+  type: Type
 }
 
 Dot_Op :: struct {
