@@ -1,12 +1,17 @@
-Person :: struct {
-  age: int,
-  name: []u8,
+Vector2 :: struct {
+  x: f32,
+  y: f32
 }
 
-AnimalKind :: enum {
+Animal_Kind :: enum {
   Dog = 42,
   Human = 420,
   Monkey = 69
+}
+
+Animal :: struct {
+  pos: Vector2,
+  age: s8
 }
 
 fibonacci :: func(n: s32) -> s32 {
@@ -17,22 +22,18 @@ fibonacci :: func(n: s32) -> s32 {
 }
 
 
-nothing :: func() {
-
-}
 
 square :: func(x: s32) -> s32 {
   return x * x
 }
 
 main :: func() -> s32 {
-  array: [12]int
 
-  ptr: ^int = &array[0]
-  array[2 + 4] += int(8) + (1 + 2 * 69)
-  x: int = square(array[2 + 4 + ptr^])
+  a: Animal
+  a.age = s8(fibonacci(4))
+  a.pos.x = square(3)
+  a.pos.y = 42.0
 
-  nothing(2)
   return 0
 }
 

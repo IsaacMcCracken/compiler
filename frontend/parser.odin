@@ -32,6 +32,14 @@ default_error_handler :: proc(p: ^Parser, token: Token, msg: string, args: ..any
   fmt.eprintf("line %d: %v\n", loc.line, line_str)
 }
 
+default_warning_handler :: proc(p: ^Parser, token: Token, msg: string, args: ..any) {
+  loc := get_token_location(p, token)
+  fmt.eprintf("%v(%v:%v) \e[31mWarning\e[m: ", p.filename, loc.line, loc.col)
+  fmt.eprintfln(msg, ..args)
+  line_str := get_token_location_line(p, loc)
+  fmt.eprintf("line %d: %v\n", loc.line, line_str)
+}
+
 expect :: proc(p: ^Parser, kind: Token_Kind) -> bool {
   return p.tokens[p.curr].kind == kind
 }

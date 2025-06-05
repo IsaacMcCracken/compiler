@@ -4,6 +4,7 @@ package frontend
 import ll "core:container/intrusive/list"
 import "core:odin/ast"
 import "base:runtime"
+import "core:math"
 import "core:fmt"
 import "core:mem"
 
@@ -27,6 +28,7 @@ import "core:mem"
 */
 
 error :: default_error_handler
+warning :: default_warning_handler
 
 Unresolved_Node :: struct {
   using link: ll.Node,
@@ -48,6 +50,162 @@ Sema :: struct {
 Scope_Item :: struct {
   name: string,
   type: Type,
+}
+
+get_expr_string :: proc(p: ^Parser, expr: Any_Expr) -> string {
+  recurse :: proc(p: ^Parser, expr: Any_Expr) -> (min, max: u32) {
+    switch kind in expr {
+      case ^Array_Index:
+        tok := get_token(p, kind.tkn_index)
+        min = tok.start
+        index_min, index_max := recurse(p, kind.index) 
+        max = index_max + 1
+      case ^Binary_Expr:
+        lhs_min, lhs_max := recurse(p, kind.lhs)
+        rhs_min, rhs_max := recurse(p, kind.rhs)
+        min = math.min(lhs_min, rhs_min)
+        max = math.max(lhs_max, rhs_max)
+      case ^Literal:
+        tok := get_token(p, kind.tkn_index)
+        min, max = tok.start, tok.end
+      case ^Pointer_Ref:
+        tok := get_token(p, kind.tkn_index)
+        min = tok.start
+        _, max = recurse(p, kind.expr)
+      case ^Function_Call:
+        tok := get_token(p, kind.tkn_index)
+        min = tok.start
+        if kind.args.count > 0 {
+          tok = get_token(p, kind.args.tail.tkn_index)
+          _, max = recurse(p, kind.args.tail.expr)
+          max += 1
+        } else {
+          max = tok.start + 2
+        }
+      case ^Type_Conv_Expr:
+        tok := get_token(p, kind.tkn_index)
+        min = tok.start
+        expr_min, expr_max := recurse(p, kind.expr) 
+        max = expr_max + 1
+      case ^Dot_Op:
+        min, _ = recurse(p, kind.par)
+        _, max = recurse(p, kind.child)
+      case ^Pointer_Deref:
+        tok := get_token(p, kind.tkn_index)
+        max = tok.end
+        tok = get_token(p, kind.ptr_lit.tkn_index)
+        min = tok.start
+    }
+    
+    return
+  }
+
+  start, end := recurse(p, expr)
+  return string(p.src[start:end])
+}
+
+sema_check_types :: proc(p: ^Parser, a, b: Type) -> (ok: bool) {
+  switch atype in a {
+    case ^Struct_Type:
+      #partial switch btype in b {
+        case ^Struct_Type:
+          aname := get_node_name(p, atype)
+          bname := get_node_name(p, btype)
+          return aname == bname
+        case: return false
+      }
+    case ^Array_Type:
+      #partial switch btype in b {
+        case ^Array_Type:
+          return sema_check_types(p, atype.base, btype.base)
+        case: return false
+      }
+    case ^Number_Type:
+      #partial switch btype in b {
+        case ^Number_Type:
+          return atype^ == btype^
+        case Literal_Type:
+          return sema_literal_conversion(btype, atype) != nil
+        case: return false
+      }
+    case ^Function_Type:
+      #partial switch btype in b {
+        case ^Function_Type:
+          aname := get_node_name(p, atype)
+          bname := get_node_name(p, btype)
+          return aname == bname
+        case: return false
+      }
+    case ^Slice_Type:
+      #partial switch btype in b {
+        case ^Slice_Type:
+          return sema_check_types(p, atype.base, btype.base)
+        case: return false
+      }
+    case ^Pointer_Type:
+      #partial switch btype in b {
+        case ^Pointer_Type:
+          return sema_check_types(p, atype.base, btype.base)
+        case: return false
+      }
+    case Literal_Type:
+        #partial switch btype in b {
+        case ^Number_Type:
+          return sema_literal_conversion(atype, btype) == btype
+        case Literal_Type:
+          if atype != btype {
+            if (atype == .Any_Float && btype == .Any_Integer ) do return true
+            if (btype == .Any_Float && atype == .Any_Integer ) do return true
+            return false
+
+          }
+          return true
+        case: return false
+      }
+  }
+  return false
+}
+
+get_type_string :: proc(p: ^Parser, type: Type) -> string {
+  switch kind in type {
+    case ^Array_Type:
+      return fmt.tprintf("[%d]%v", kind.len, get_type_string(p, kind.base))
+    case ^Number_Type:
+      size := 1 << (kind.size + 3)
+      if kind.float {
+        return fmt.tprintf("f%d", size)
+      } else {
+        if kind.signed {
+          return fmt.tprintf("s%d", size)
+        } else {
+          return fmt.tprintf("u%d", size)
+        }
+      }
+    case ^Pointer_Type:
+      return fmt.tprintf("^%v", get_type_string(p, kind.base))
+    case ^Struct_Type:
+      return get_node_name(p, kind)
+    case ^Function_Type:
+      fn_tok_index := kind.tkn_index + 3
+      end_tok_index := kind.params.tail.tkn_index + 1
+      fn_tok := get_token(p, fn_tok_index)
+      end_tok := get_token(p, end_tok_index)
+      return string(p.src[fn_tok.start:end_tok.end])
+    case ^Slice_Type:
+      return fmt.tprintf("[]%v", get_type_string(p, kind.base))
+    case Literal_Type:
+      switch kind {
+        case .Any_Float:
+          return "float"
+        case .Any_Integer:
+          return "integer"
+        case .String:
+          return "string"
+        case .Invalid:
+          return "invalid "
+      }
+  }
+  return "nil"
 }
 
 /* create a better scope look up system */
@@ -171,7 +329,7 @@ sema_check_function_returns :: proc(p: ^Parser, block: ^Block) -> (ok: bool) {
   return false
 }
 
-sema_check_function_call :: proc(p: ^Parser, call: ^Function_Call) -> bool {
+sema_check_function_call :: proc(p: ^Parser, call: ^Function_Call) -> (ret_type: Type, ok: bool) {
   fn_name := get_node_name(p, call)
   call_token := get_token(p, call.tkn_index)
   ufn, uok := p.sema.lookup[fn_name]
@@ -179,21 +337,21 @@ sema_check_function_call :: proc(p: ^Parser, call: ^Function_Call) -> bool {
     // what should happen is that this is put on a queue that
     // we see if this dependency had been resolved... miau :3
     error(p, call_token, "%v has not been declared yet :\\")
-    return false
+    return nil, false
   }
-  fn, ok := ufn.(^Function_Type)
-  if !ok {
+  fn, fok := ufn.(^Function_Type)
+  if !fok {
     error(p, call_token, "%v is not a function.", fn_name)
-    return false
+    return nil, false
   }
 
   args, fields := call.args, fn.params
-
+  ret_type = fn.ret_type
   
   if args.count != fields.count {
     // error message about not having the same shit
     error(p, call_token, "The function %v has %v arguments you put %v", fn_name, fields.count, args.count)
-    return false
+    return ret_type, false
   }
   
   call_iter := expr_list_iterator_from_list(&args)
@@ -208,13 +366,23 @@ sema_check_function_call :: proc(p: ^Parser, call: ^Function_Call) -> bool {
 
     if field.type != type {
       // error
-      arg_token := get_token(p, arg.tkn_index)
-      error(p, arg_token, "Function call type mismatch suppose")
-      return false
+      num_type, num_ok := field.type.(^Number_Type)
+      lit_type, lit_ok := type.(Literal_Type)
+      if num_ok && lit_ok {
+        if sema_literal_conversion(lit_type, num_type) == nil {
+          field_name := get_node_name(p, field)
+          error(p, get_token(p, arg.tkn_index), "cannot convert literal '%v' to the parameter '%v' in function %v", lit_type, field_name, fn_name)
+          return ret_type, false
+        }
+      } else {
+        arg_token := get_token(p, arg.tkn_index)
+        error(p, arg_token, "Function call type mismatch suppose")
+        return ret_type, false
+      }
     }
   }
 
-  return true
+  return ret_type, true
 }
 
 sema_resolve_local_decl_type :: proc(p: ^Parser, decl: ^Local_Var_Decl) {
@@ -301,21 +469,32 @@ sema_analyze_block :: proc(p: ^Parser, block: ^Block, ret_type: Type /* nil if n
           
         sema_item_push(p, get_node_name(p, kind), kind.type)
       case ^Block:
-        // ok := 
+
         block_ok := sema_analyze_block(p, kind, ret_type)
         if !block_ok do ok = false
       case ^Return_Stmt:
-        // ok := 
-        expr_type := sema_check_expression(p, kind.expr)
 
+        expr_type := sema_check_expression(p, kind.expr)
+        number_type, num_ok := ret_type.(^Number_Type)
+        lit_type, lit_ok := expr_type.(Literal_Type)
         if ret_type != expr_type {
-          fmt.println("Error: %v is not %v expected a different return type.", expr_type, ret_type)
-          ok = false
+          if !(num_ok && lit_ok && sema_literal_conversion(lit_type, number_type) != nil) {
+            expr_name, ret_name, expr_str := get_type_string(p, lit_type), get_type_string(p, number_type), get_expr_string(p, kind.expr)
+            error(p, get_token(p, kind.tkn_index), "the expression '%v' of type '%v' is not the expected return type '%v'.", expr_str, expr_name, ret_name)
+            ok = false
+          }
         }
       case ^Update_Stmt:
-        if sema_check_expression(p, kind.obj) == nil do ok = false        
-        if sema_check_expression(p, kind.expr) == nil do ok = false
+        if !sema_check_valid_update_obj(p, kind.obj) do ok = false
+        obj_type := sema_check_expression(p, kind.obj)      
+        expr_type := sema_check_expression(p, kind.expr)
 
+        if !sema_check_types(p, obj_type, expr_type) {
+          obj_name, obj_type_name := get_expr_string(p, kind.obj), get_type_string(p, obj_type)
+          expr_type_name, expr_string := get_type_string(p, expr_type), get_expr_string(p, kind.expr)
+          error(p, get_token(p, kind.tkn_index), "A expression '%v' of type '%v' cannot update '%v' of type '%v'.", expr_string, expr_type_name, obj_name, obj_type_name)
+          ok = false
+        }
       case ^If_Stmt:
         if sema_check_expression(p, kind.condition) == nil do ok = false
         if !sema_analyze_block(p, kind.body, ret_type) do ok = false
@@ -324,7 +503,12 @@ sema_analyze_block :: proc(p: ^Parser, block: ^Block, ret_type: Type /* nil if n
         if !sema_analyze_block(p, kind.body, ret_type) do ok = false
         pop(&p.sema.items)
       case ^Function_Call:
-        if sema_check_function_call(p, kind) do ok = false
+        type, fok := sema_check_function_call(p, kind) 
+        if !fok do ok = false
+        if type != nil {
+          fn_name := get_node_name(p, kind)
+          warning(p, get_token(p, kind.tkn_index), "Unused return in '%v' function call.", fn_name)
+        }
     }
   }
 
@@ -359,6 +543,7 @@ sema_check_expression :: proc(p: ^Parser, expr: Any_Expr) -> (type: Type) {
       // Since we are not doing operations every type conversion is communitive/assosittive
       
       // lets switch the types to make this easier
+      
       _, rhs_is_lit := rhs_type.(Literal_Type)
       if rhs_is_lit do lhs_type, rhs_type = rhs_type, lhs_type 
 
@@ -380,7 +565,9 @@ sema_check_expression :: proc(p: ^Parser, expr: Any_Expr) -> (type: Type) {
 
       return nil
     case ^Function_Call:
-      ok := sema_check_function_call(p, kind)
+      type, ok := sema_check_function_call(p, kind)
+      if !ok do return nil
+      return type
     
     case ^Pointer_Deref:
       ptr_name := get_node_name(p, kind.ptr_lit)
@@ -447,7 +634,7 @@ sema_check_dot_expression :: proc(p: ^Parser, dot: ^Dot_Op) -> (type: Type) {
           error(p, get_token(p, kind.par.tkn_index), "field '%v' in %v is not of type 'struct'", field_name, struct_name)
           return nil
         }
-        return sema_check_dot_expr_struct(p, struct_type, kind)
+        return sema_check_dot_expr_struct(p, struct_type, kind.child)
       case ^Literal:
         field_name := get_node_name(p, kind)
         field_type, ok := get_struct_field_type(p, s, field_name)

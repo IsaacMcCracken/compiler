@@ -1,23 +1,42 @@
-Vector :: struct {
+Vector2 :: struct {
   x: f32,
   y: f32
 }
 
-Entity :: struct {
-  health: s16,
-  name: [16]s8,
-  pos: Vector,
-  targets: [4]Vector,
+Animal_Kind :: enum {
+  Dog = 42,
+  Human = 420,
+  Monkey = 69
+}
+
+Animal :: struct {
+  pos: Vector2,
+  age: s8
+}
+
+fibonacci :: func(n: s32) -> s32 {
+  if n <= 2 {
+    return 1
+  }
+  return n + fibonacci(n - 1)
 }
 
 
-main :: func(x: int) {
-  v: Vector
-  v.x[0] = 69
-  a := 3 + v.x
-  e: Entity
-  target := e.targets[0]
 
+square :: func(x: s32) -> s32 {
+  return x * x
 }
+
+main :: func() -> s32 {
+
+  a: Animal
+  a.age = s8(fibonacci(4))
+  a.pos.x = f32(square(3))
+  a.pos.y = 42.0
+
+  return 0
+}
+
+
 
 
