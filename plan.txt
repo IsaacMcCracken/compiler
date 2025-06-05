@@ -1,34 +1,35 @@
 
 
 Todo:
-[ ] - Add c foreign function interface i.e get printf working
-[ ] - Add c pointer like [^] this for c pointers
-[ ] - once language is almost done add reflection
-[ ] - Add typeid type 
-[ ] - Add any type which is a pointer and a typeid
-[ ] - Add enums
-[ ] - Add bitwise operations
-[ ] - Add bit_sets ????
-[ ] - add tagged unions
-[ ] - Better error messages other than panicing like we should recover and continue parsing
-[ ] - Add out of order type system 
-[ ] - Add implicit type inference i.e. ':='
-[ ] - Add module system
-[ ] - Add import decl
-[ ] - Add Struct initialization
-[ ] - Add Array Literals
-[ ] - Add string Literals
-[ ] - Add the dot operator for modules and structs
-[ ] - Add the dot opertator for slices and arrays for array.len and array.ptr
+- [ ] Add enums 1. Add a named expresion list node
+- [ ] Add c foreign function interface i.e get printf working
+- [ ] Add c pointer like [^] this for c pointers
+- [ ] once language is almost done add reflection
+- [ ] Add typeid type 
+- [ ] Add any type which is a pointer and a typeid
+- [ ] Add bitwise operations
+- [ ] Add bit_sets ????
+- [ ] add tagged unions
+- [ ] Better error messages other than panicing like we should recover and continue parsing
+- [ ] Add out of order type system 
+- [ ] Add implicit type inference i.e. ':='
+- [ ] Add module system
+- [ ] Add import decl
+- [ ] Add Struct initialization
+- [ ] Add Array Literals
+- [ ] Add string Literals
+- [ ] Add the dot operator for modules and structs
+- [ ] Add the dot opertator for slices and arrays for array.len and array.ptr
 
 In Progress:
-[ ] - Add in order semantic analysis
-[ ] - Type Checking
-[ ] - Add pointer type (dont know the weak spots)
-[ ] - Add structs to the type system (1/2)
+- [ ] Add in order semantic analysis
+- [ ] Type Checking
+- [ ] Add pointer type (dont know the weak spots)
+- [ ] Add structs to the type system (1/2)
 
 
 Finished:
+[x] - Literal to Number type Conversions
 [x] - Add array indexing 
 [x] - Add function calls 
 [x] - Type Conversion Operator i.e. int(some_float)

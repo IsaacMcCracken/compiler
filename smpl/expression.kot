@@ -1,6 +1,23 @@
-
-
-evaltest :: func(x: int) -> int {
-  return 21 * 20 + x
+Vector :: struct {
+  x: f32,
+  y: f32
 }
+
+Entity :: struct {
+  health: s16,
+  name: [16]s8,
+  pos: Vector,
+  targets: [4]Vector,
+}
+
+
+main :: func(x: int) {
+  v: Vector
+  v.x[0] = 69
+  a := 3 + v.x
+  e: Entity
+  target := e.targets[0]
+
+}
+
 

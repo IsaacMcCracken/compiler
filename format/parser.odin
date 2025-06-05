@@ -47,7 +47,7 @@ Node :: struct {
   ref: Link,
   next, prev: Link,
   children: Node_List,
-  atributes: Node_List
+  attributes: Node_List
 }
 
 
@@ -223,7 +223,10 @@ push_node :: proc(p: ^Parser, prev, next: Link) {
 push_list :: proc(p: ^Parser, list: ^Node_List, new: Link) {
   if list.last != 0 {
     // default case when this list is not empty
-    assert(list.first == 0)
+    if list.first == 0 {
+      fmt.panicf("list: %v new %v", list^, new)
+    }
+
     push_node(p, list.last, new)
     list.last = new
   } else {
@@ -241,7 +244,7 @@ parse_nodes :: proc(p: ^Parser) -> (children: Node_List) {
   kind, index := parse_token_current(p)
 
   for kind == .Identifier || kind == .Tag {
-    tag_list := parse_tags(p)
+    attributes := parse_attributes(p)
     kind, index = parse_token_current(p)
 
     
@@ -252,6 +255,7 @@ parse_nodes :: proc(p: ^Parser) -> (children: Node_List) {
     
     node, link  := alloc_new_node(p, index)
     push_list(p, &children, link)
+    node.attributes = attributes
 
     kind, index = parse_token_advance(p)
 
@@ -267,34 +271,29 @@ parse_nodes :: proc(p: ^Parser) -> (children: Node_List) {
     
   }
 
-  
-  
-  
-  
-
-
-
   return children
 }
 
-parse_tags :: proc(p: ^Parser) -> (list: Node_List) {
+parse_attributes :: proc(p: ^Parser) -> (list: Node_List) {
   // function should enter on the tag and exit if not on tag and return 0 tag ref
-  tok_kind, tok_index := parse_token_current(p)
+  kind, index := parse_token_current(p)
   
-  for tok_kind == .Tag {
-    tag, link := alloc_new_node(p, tok_index)
+  for kind == .Tag {
+    kind, index = parse_token_current(p)
+
+    tag, link := alloc_new_node(p, index)
     push_list(p, &list, link)
     
-    tok_kind, tok_index = parse_token_advance(p)
+    kind, index = parse_token_advance(p)
 
 
-    if tok_kind == .Scope_Start {
-      tok_kind, tok_index = parse_token_advance(p)
+    if kind == .Scope_Start {
+      kind, index = parse_token_advance(p)
       tag.children = parse_nodes(p)
       if !parse_expect(p, .Scope_End) {
         fmt.panicf("expected to end")
       }
-      tok_kind, tok_index = parse_token_advance(p)
+      kind, index = parse_token_advance(p)
     }
 
   }
@@ -304,13 +303,15 @@ parse_tags :: proc(p: ^Parser) -> (list: Node_List) {
 
 
 
-parse_file :: proc(p: ^Parser, t: Tokenizer) -> (root: ^Node, module: string) {
+parse_file :: proc(p: ^Parser, filename: string) -> (root: ^Node, module: string) {
+  t := Tokenizer{}
+  tokenizer_init(&t, filename)
+  tokenize(&t)
+
   p.t = t
-  p.nodes = make([dynamic]Node)
+  p.nodes = make([dynamic]Node, 0, len(t.tokens))
   p.curr = 0
 
-
-  
   kind, index := parse_token_current(p)
   name := parse_get_token_name(p, index)
   if kind != .Tag || name != "forest" {
@@ -329,20 +330,21 @@ parse_file :: proc(p: ^Parser, t: Tokenizer) -> (root: ^Node, module: string) {
   link: Link
   root, link = alloc_new_node(p, index)
   module = parse_get_token_name(p, index)
-  fmt.println("MODULE NAME:", module)
 
+  _rid := index
   // decls
   kind, index = parse_token_advance(p)
-
+  
   if kind == .Scope_Start {
     kind, index = parse_token_advance(p)
-
-    root.children = parse_nodes(p)
+    
+    p.nodes[0].children = parse_nodes(p)
     if !parse_expect(p, .Scope_End) {
       // fmt.panicf("no i expected a scope end")
     }
   }
-
+  
+  
   return
 }
 
@@ -351,18 +353,10 @@ import "core:strings"
 
 
 main :: proc() {
-  fmt.println("Node Size", size_of(Node))
-
-  t := &Tokenizer{}
-  tokenizer_init(t, "format/sample.tr")
-
-  tokenize(t)
-
-  
   p := &Parser{}
-  root, name := parse_file(p, t^)
+  root, name := parse_file(p, "format/sample.tr")
 
-  for tok, i in t.tokens {
+  for tok, i in p.t.tokens {
     if tok.kind == .Identifier || tok.kind == .Tag {
       fmt.println(i, tok.kind, parse_get_token_name(p, Index(i)))
     } else {
@@ -372,9 +366,9 @@ main :: proc() {
   }
 
   b := strings.builder_init(&{})
-
-
   code := unparse(p, b)
+
   fmt.println(code)
+  // fmt.println(p.nodes)
 
 }

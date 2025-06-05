@@ -15,9 +15,9 @@ to_c_code :: proc(p: ^Parser, b: ^strings.Builder) {
 
   for decl in decl_iterate_forward(&iter) {
     #partial switch kind in decl {
-      case ^Function_Decl:
+      case ^Function_Type:
         to_c_function(p, kind, b)
-      case ^Struct_Decl:
+      case ^Struct_Type:
         to_c_struct(p, kind, b)
       case ^Enum_Decl:
         to_c_enum(p, kind, b)
@@ -52,30 +52,70 @@ to_c_enum :: proc(p: ^Parser, enum_decl: ^Enum_Decl, b: ^strings.Builder) {
   strings.write_string(b, "};\n")
 }
 
-to_c_struct :: proc(p: ^Parser, struct_decl: ^Struct_Decl, b: ^strings.Builder) {
-  struct_name := get_node_name(p, struct_decl)
-  fmt.sbprintf(b, "typedef struct %v %v;\n", struct_name, struct_name)
+to_c_struct :: proc(p: ^Parser, s: ^Struct_Type, b: ^strings.Builder) {
+  struct_name := get_node_name(p, s)
+  // fmt.sbprintf(b, "typedef struct %v %v;\n", struct_name, struct_name)
   fmt.sbprintf(b, "struct %v {{\n", struct_name)
 
-  iter := field_iterator_from_list(&struct_decl.fields)
+  iter := field_iterator_from_list(&s.fields)
   for field in field_iterate_forward(&iter) {
     strings.write_string(b, TAB_OR_SPACE)
-    #partial switch kind in field.type {
-      case ^Number_Type:
-        to_c_number_type(kind^, b)
-      case ^Slice_Type:
-        
-    }
-    strings.write_byte(b, ' ')
     field_name := get_node_name(p, field)
-    fmt.sbprintf(b, "%v;\n", field_name)
+    to_c_local_or_field_type(p, field.type, field_name, b)
+    strings.write_string(b, ";\n")
   }
 
   strings.write_string(b, "};\n")
 
 }
+to_c_type :: proc(p: ^Parser, type: Type, b: ^strings.Builder) {
+  #partial switch kind in type {
+      case ^Number_Type:
+        to_c_number_type(kind^, b)
+        strings.write_byte(b, ' ')
+      case ^Struct_Type:
+        struct_name := get_node_name(p, kind)
+        fmt.sbprintf(b, "struct %v ", struct_name)
+      case ^Pointer_Type:
+        n := 1
+        base := kind.base
+        ptr, ok := base.(^Pointer_Type)
+        for ok {
+          n += 1
+          base = ptr.base
+          ptr, ok = base.(^Pointer_Type)
+        }
+      to_c_type(p, base, b)
+      strings.write_byte(b, ' ')
+      for i in 0..<n {
+        strings.write_byte(b, '*')
+      }
+  }
+}
+
+to_c_local_or_field_type :: proc(p: ^Parser, type: Type, obj_name: string, b: ^strings.Builder) {
+  #partial switch kind in type {
+      case ^Array_Type:
+        n := kind.len
+        base := kind.base
+        arr, ok := base.(^Array_Type) 
+        for ok {
+          n *= arr.len
+          base = arr.base
+          arr, ok = base.(^Array_Type)
+        }
+        
+        to_c_type(p, base, b)
+        
+        fmt.sbprintf(b, "%v[%d]", obj_name, n)
+      case:
+        to_c_type(p, type, b)
+        strings.write_string(b, obj_name)
+    }
+}
 
 to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Builder) {
+  assert(decl.type != nil)
   switch type in decl.type {
     case ^Number_Type:
       to_c_number_type(type^, b) 
@@ -108,17 +148,17 @@ to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Build
 
     case ^Array_Type:
       // fix this
-      base := type.base.(^Number_Type) // obviously figure out logic for more compounds
-      to_c_number_type(base^, b) 
-      strings.write_byte(b, ' ')
-      name := get_node_name(p, decl)
-      strings.write_string(b, name)
-      strings.write_byte(b, '[')
-      strings.write_int(b, int(type.len))
-      strings.write_byte(b, ']')
 
-      assert(decl.init == nil) // we will see this later
-      strings.write_string(b, " = {0}")
+      name := get_node_name(p, decl)
+
+      to_c_local_or_field_type(p, decl.type, name, b)
+
+      if decl.init == nil {
+        strings.write_string(b, " = {0}")
+      } else {
+        strings.write_string(b, " = ")
+        to_c_expr(p, decl.init, b)
+      }
       strings.write_string(b, ";\n")
     case ^Slice_Type:
       // declaration
@@ -131,8 +171,23 @@ to_c_local_var_decl :: proc(p: ^Parser, decl: ^Local_Var_Decl, b: ^strings.Build
       name := get_node_name(p, decl)
       strings.write_string(b, name)
       strings.write_string(b, ";\n")
+    case ^Struct_Type:
+      var_name := get_node_name(p, decl)
+      to_c_local_or_field_type(p, type, var_name, b)
+
+      if decl.init == nil {
+        strings.write_string(b, " = { 0 }")
+      } else {
+        strings.write_string(b, " = ")
+        to_c_expr(p, decl.init, b)
+      }
+      strings.write_string(b, ";\n")
+
     case Literal_Type:
       assert(false)
+    case ^Function_Type:
+      assert(false)
+    
   }
 }
 
@@ -168,7 +223,7 @@ to_c_operator :: proc(p: ^Parser, op: ^Binary_Expr, b: ^strings.Builder) {
 }
 
 
-to_c_function :: proc(p: ^Parser, fn: ^Function_Decl, b: ^strings.Builder) {
+to_c_function :: proc(p: ^Parser, fn: ^Function_Type, b: ^strings.Builder) {
   if fn.ret_type == nil {
     strings.write_string(b, "void")
   } else {
@@ -235,8 +290,7 @@ to_c_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, level := 0) {
       to_c_expr(p, kind.expr, b)
       strings.write_string(b, ";\n")
     case ^Update_Stmt:
-      var_name := get_node_name(p, kind.var)
-      strings.write_string(b, var_name)
+      to_c_expr(p, kind.obj, b)
       strings.write_byte(b, ' ')
 
       updater := get_node_name(p, kind)
@@ -249,6 +303,14 @@ to_c_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, level := 0) {
       strings.write_string(b, "if ( ")
       to_c_expr(p, kind.condition, b)
       strings.write_string(b, " )\n")
+      to_c_block(p, kind.body, b, level)
+    case ^Elif_Stmt:
+      strings.write_string(b, "else if ( ")
+      to_c_expr(p, kind.condition, b)
+      strings.write_string(b, " )\n")
+      to_c_block(p, kind.body, b, level)
+    case ^Else_Stmt:
+      strings.write_string(b, "else\n")
       to_c_block(p, kind.body, b, level)
     case ^Local_Var_Decl:
       to_c_local_var_decl(p, kind, b)
@@ -266,23 +328,7 @@ to_c_stmt :: proc(p: ^Parser, stmt: Any_Stmt, b: ^strings.Builder, level := 0) {
       strings.write_string(b, counter_name)
       strings.write_string(b, "++)\n")
       to_c_block(p, kind.body, b, level)
-    case ^Array_Index_Update_Stmt:
-      array_type_name := get_node_name(p, kind.array_index)
-      strings.write_string(b, array_type_name)
-      strings.write_byte(b, '[')
 
-      to_c_expr(p, kind.array_index.index, b)
-
-      strings.write_string(b, "] ")
-
-      updater_string := get_node_name(p, kind)
-      strings.write_string(b, updater_string)
-      strings.write_byte(b, ' ')
-
-      
-      to_c_expr(p, kind.expr, b)
-
-      strings.write_string(b, ";\n");
     case ^Function_Call:
       to_c_function_call(p, kind, b)
       strings.write_string(b, ";\n");
@@ -349,5 +395,9 @@ to_c_expr :: proc(p: ^Parser, expr: Any_Expr, b: ^strings.Builder) {
       strings.write_byte(b, ')')
       to_c_expr(p, kind.expr, b)
       strings.write_string(b, ")")
+    case ^Dot_Op:
+      to_c_expr(p, kind.par, b)
+      strings.write_byte(b, '.')
+      to_c_expr(p, kind.child, b)
   }
 }

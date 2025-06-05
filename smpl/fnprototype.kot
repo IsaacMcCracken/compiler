@@ -9,11 +9,11 @@ AnimalKind :: enum {
   Monkey = 69
 }
 
-factorial :: func(n: s32) -> s32 {
+fibonacci :: func(n: s32) -> s32 {
   if n <= 2 {
     return 1
   }
-  return n + factorial(n - 1)
+  return n + fibonacci(n - 1)
 }
 
 

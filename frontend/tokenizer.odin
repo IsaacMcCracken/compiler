@@ -83,6 +83,8 @@ Token_Kind :: enum u32 {
 
   // control flow
   If,
+  Elif,
+  Else,
   For,
   In,
   Dot,
@@ -90,6 +92,9 @@ Token_Kind :: enum u32 {
   Return,
 }
 
+Token_Location :: struct {
+  line, col: u32
+}
 
 Token :: struct {
   kind: Token_Kind,
@@ -107,6 +112,10 @@ tokenizer_init :: proc(t: ^Tokenizer, filename: string, src: []byte) {
   t.filename = filename
   t.src = src
   t.tokens, _ = make([dynamic]Token)
+}
+
+get_token :: proc(p: ^Parser, index: Token_Index) -> (tok: Token) {
+  return p.tokens[index]
 }
 
 tokenizer_number :: proc(t: ^Tokenizer) {

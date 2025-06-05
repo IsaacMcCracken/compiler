@@ -18,7 +18,7 @@ main :: proc() {
   tokenizer_init(&tokenizer, "expression.kot", contents)
 
   tokenize(&tokenizer)
-
+  // print_tokens(tokenizer)
 
   arena: vmem.Arena
   alloc_err := vmem.arena_init_static(&arena)
@@ -31,8 +31,9 @@ main :: proc() {
 
 
   parse(&parser)
-  sema_analyze(&parser)
+  sema_ok := sema_analyze(&parser)
 
+  if !sema_ok do return 
   b, _ := strings.builder_init(&{})
   to_c_code(&parser, b)
 

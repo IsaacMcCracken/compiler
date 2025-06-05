@@ -1,5 +1,5 @@
 @forest(0.1) program (
-  @func( @type(int) x ) @ret(int) mul69add420 (
-    return (+ (* (69 x)) 420)
+  @func( @type(int) x ) @ret(int) square (
+    return (*(x x))
   )
 )

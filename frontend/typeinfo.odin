@@ -6,10 +6,12 @@ import "core:container/intrusive/list"
 
 
 Pointer_Type :: struct {
+  using node: Node,
   base: Type
 }
 
 Array_Like_Type :: struct {
+  using node: Node,
   base: Type,
 }
 
@@ -30,9 +32,7 @@ Number_Type :: bit_field u8 {
   signed: bool | 1,
 }
 
-Struct_Type :: struct {
-  decl: ^Struct_Decl
-}
+
 
 Literal_Type :: enum {
   Invalid,
@@ -46,6 +46,8 @@ Type :: union #shared_nil {
   ^Pointer_Type,
   ^Array_Type,
   ^Slice_Type,
+  ^Struct_Type,
+  ^Function_Type,
   Literal_Type,
 }
 

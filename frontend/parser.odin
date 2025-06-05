@@ -14,7 +14,7 @@ Parser :: struct {
   filename: string,
   src: []byte,
   decls: Decl_List,
-
+  lines: []u32,
   err: Error_Handler,
   
   sema: Sema,
@@ -24,9 +24,12 @@ Parser :: struct {
 }
 
 
-default_error_handler :: proc(token: Token, msg: string, args: ..any) {
-  fmt.eprintf("Error: Token(%v, %v, %v)\n\t")
-  fmt.eprintfln(msg, args)
+default_error_handler :: proc(p: ^Parser, token: Token, msg: string, args: ..any) {
+  loc := get_token_location(p, token)
+  fmt.eprintf("%v(%v:%v) \e[31mError\e[m: ", p.filename, loc.line, loc.col)
+  fmt.eprintfln(msg, ..args)
+  line_str := get_token_location_line(p, loc)
+  fmt.eprintf("line %d: %v\n", loc.line, line_str)
 }
 
 expect :: proc(p: ^Parser, kind: Token_Kind) -> bool {
@@ -77,12 +80,60 @@ skip_newlines :: proc(p: ^Parser) {
 }
 
 parser_from_tokenizer :: proc(p: ^Parser, t: ^Tokenizer, allocator:=context.allocator) {
+  context.allocator = allocator
   p.tokens = t.tokens[:]
   p.src = t.src
   p.filename = t.filename
   p.allocator = allocator
+
+  /* We doing the line counter to search stuff for errors*/
+  new_line_count := 0
+  for tok in p.tokens {
+    if tok.kind == .Newline {
+      new_line_count += 1
+    } 
+  }
+
+  p.lines = make([]u32, new_line_count)
+  line_counter := 0
+  for tok, i in  p.tokens {
+    if tok.kind == .Newline {
+      p.lines[line_counter] = tok.start
+      line_counter += 1
+    }
+  }
+
   sema_init(&p.sema)
-} 
+}
+
+get_token_location :: proc(p: ^Parser, tok: Token) -> (loc: Token_Location) {
+  char_pos := tok.start // x
+
+  high, low := u32(len(p.lines)), u32(0)
+  for {
+    mid := low + (high - low)/2
+    /* return conditions*/
+    if mid == 0 do return Token_Location{line = 1, col = char_pos}
+    if char_pos < p.lines[mid] && char_pos >= p.lines[mid - 1] {
+      return Token_Location{line = mid + 1, col = p.lines[mid] - char_pos}
+    } else if char_pos > p.lines[mid] {
+      low = mid + 1
+    } else {
+      high = mid - 1
+    }
+  }
+
+  return
+}
+
+get_token_location_line :: proc(p: ^Parser, loc: Token_Location) -> string {
+  if loc.line == 1 {
+    return string(p.src[:p.lines[0]])
+  }
+  start, end := p.lines[loc.line - 2] + 1, p.lines[loc.line - 1]
+  return string(p.src[start:end])
+
+}
 
 
 
@@ -193,9 +244,9 @@ parse_enum :: proc(p: ^Parser, enum_name_token: Token_Index) -> ^Enum_Decl {
   return enumer
 }
 
-parse_function :: proc(p: ^Parser, fn_name_tkn: Token_Index) -> ^Function_Decl {
+parse_function :: proc(p: ^Parser, fn_name_tkn: Token_Index) -> ^Function_Type {
   assert(p.tokens[p.curr].kind == .Func)
-  func := new(Function_Decl)
+  func := new(Function_Type)
 
   func.tkn_index = fn_name_tkn
 
@@ -234,11 +285,11 @@ parse_function :: proc(p: ^Parser, fn_name_tkn: Token_Index) -> ^Function_Decl {
   return func
 }
 
-parse_struct :: proc(p: ^Parser, struct_name_token_index: Token_Index) -> ^Struct_Decl {
+parse_struct :: proc(p: ^Parser, struct_name_token_index: Token_Index) -> ^Struct_Type {
   assert(p.tokens[p.curr].kind == .Struct)
-  struct_decl := new(Struct_Decl)
+  Struct_Type := new(Struct_Type)
 
-  struct_decl.tkn_index = struct_name_token_index
+  Struct_Type.tkn_index = struct_name_token_index
 
   token := advance_token(p)
 
@@ -247,24 +298,24 @@ parse_struct :: proc(p: ^Parser, struct_name_token_index: Token_Index) -> ^Struc
     fields := parse_field_list(p)
     skip_newlines(p)
     if expect(p, .Right_Brace) {
-      struct_decl.fields = fields
+      Struct_Type.fields = fields
       advance_token(p)
     } else {
       tok, i := current_token(p)
-      fmt.println(get_node_name(p, {tkn_index = i}))
-      fmt.panicf("CRAP: we expected a } we got %v", tok.kind)
+      tok_name := get_token_name(p, i)
+      fmt.panicf("CRAP: we expected a } we got %v", tok_name)
     }
   } else {
     // we gotta do an error system soon
   }
 
 
-  return struct_decl
+  return Struct_Type
 }
 
 parse_field_list :: proc(p: ^Parser) -> Field_List {
   fields: Field_List
-
+  prev_type: Type
   parsing_fields: for {
     skip_newlines(p)
     field_token, fields_name_index := current_token(p)
@@ -306,9 +357,8 @@ parse_expect_number :: proc(p: ^Parser) -> (value: int, ok: bool) {
   return strconv.parse_int(str)
 }
 
-parse_type :: proc(p: ^Parser) -> Type {
+parse_type :: proc(p: ^Parser) -> (type: Type) {
   tok, index := current_token(p)
-  type: Type
 
   #partial switch tok.kind {
     /* Primitive Types */
@@ -320,6 +370,7 @@ parse_type :: proc(p: ^Parser) -> Type {
       advance_token(p)
       base := parse_type(p)
       ptr_type.base = base
+      ptr_type.tkn_index = index
 
       return ptr_type
     /* Array Types */
@@ -333,6 +384,7 @@ parse_type :: proc(p: ^Parser) -> Type {
 
         slice_type := new(Slice_Type)
         slice_type.base = base
+        slice_type.tkn_index = index
         type = slice_type
       } else {
         /* static array */
@@ -349,16 +401,17 @@ parse_type :: proc(p: ^Parser) -> Type {
         // TODO: make a global type system
         arr_type := new(Array_Type)
         arr_type^ = Array_Type{
+          tkn_index = index,
           base = base,
           len = u32(length)
         }
   
         
-        type = arr_type
+        return arr_type
       }
 
       // consider making this a expresion
-
+    case .Identifier:
     case:
       fmt.panicf("only primitive types rn, here is the token we got %v", p.tokens[:p.curr+1])
   }
@@ -386,6 +439,21 @@ parse_body :: proc(p: ^Parser) -> ^Block {
         final = parse_update_local_decl_or_call(p)
       case .If: 
         final = parse_if_stmt(p)
+      case .Elif:
+        final = transmute(^Elif_Stmt)parse_if_stmt(p)
+      case .Else:
+        advance_token(p)
+        skip_newlines(p)
+        if !expect(p, .Left_Brace) {
+          error(p, token, "Error: We Expected a '{' after else")
+          // recover somehow
+          panic("frick")
+        }
+        advance_token(p)
+        skip_newlines(p)
+        stmt := new(Else_Stmt)
+        stmt.body = parse_body(p)
+        final = stmt
       case .For: 
         final = parse_for_loop(p)
       
@@ -415,45 +483,38 @@ parse_update_local_decl_or_call :: proc(p: ^Parser) -> Any_Stmt {
 
   next_token := peek_token(p)
   #partial switch next_token.kind {
-    case .Equals, .Plus_Equals, .Minus_Equals, .Times_Equals:
-      advance_token(p)
-      _, updater_index := current_token(p)
-      stmt := new(Update_Stmt)
-      stmt.tkn_index = updater_index
-      stmt.var = new(Literal)
-      // TODO(ISAAC) make sure that this is a variable
-      stmt.var.tkn_index = main_index
-      advance_token(p)
-      stmt.expr = parse_expression(p)
-      final = stmt
+
       
     case .Colon:
       advance_token(p, 2)
-      type := parse_type(p)
       var := new(Local_Var_Decl) 
-      var.type = type
+
+      if !expect(p, .Equals){
+        var.type = parse_type(p)
+      }
       var.tkn_index = main_index
 
       if expect(p, .Equals) {
         advance_token(p)
         var.init = parse_expression(p)
-      }
+      } 
       final = var
-    case .Left_Bracket:
-      array_index_update := new(Array_Index_Update_Stmt)
-      array_index_update.array_index = parse_array_index(p)
-      updater_tok, updater_index := current_token(p)
-      #partial switch updater_tok.kind {
-        case .Equals, .Plus_Equals, .Minus_Equals, .Times_Equals:
-          array_index_update.tkn_index = updater_index
-          advance_token(p)
-          array_index_update.expr = parse_expression(p)
-        case:
-          fmt.panicf("Dont know this updater %v", next_token.kind)
-      }
-      final = array_index_update
     case .Left_Paren:
       final = parse_function_call(p)
+
+    case:
+      obj := parse_expression(p)
+      token, index := current_token(p)
+      #partial switch token.kind {
+          case .Equals, .Plus_Equals, .Minus_Equals, .Times_Equals:
+            stmt := new(Update_Stmt)
+            stmt.tkn_index = index
+            stmt.obj = obj
+            advance_token(p)
+            stmt.expr = parse_expression(p)
+            final = stmt
+      }
+      
   }
 
   
@@ -587,6 +648,15 @@ parse_urinary :: proc(p: ^Parser) -> Any_Expr {
         deref.ptr_lit.tkn_index = tkn_index
         advance_token(p)
         return deref
+      } else if peek_token(p).kind == .Dot{
+        par := new(Literal)
+        par.tkn_index = tkn_index
+
+        advance_token(p, 2)
+        dot := new(Dot_Op)
+        dot.par = par
+        dot.child = parse_urinary(p)
+        return dot
       }
 
       fallthrough 
@@ -683,11 +753,12 @@ parse_function_call :: proc(p: ^Parser) -> ^Function_Call {
   
   advance_token(p) // current token is now the first arg
   parsing_args: for p.curr < u32(len(p.tokens)) {
-    tok, _ := current_token(p)
+    tok, tok_index := current_token(p)
    
     if tok.kind == .Right_Paren do break  
-
+    
     node := new(Expr_List_Node) 
+    node.tkn_index = tok_index  
     node.expr = parse_expression(p)
     expr_append(&call.args, node)
 

@@ -20,20 +20,20 @@ Node :: struct {
   tkn_index: Token_Index,
 }
 
-Function_Decl_Flags :: bit_set[Function_Decl_Flag; u8]
-Function_Decl_Flag :: enum u8 {
+Function_Type_Flags :: bit_set[Function_Type_Flag; u8]
+Function_Type_Flag :: enum u8 {
   Extern,
 }
 
 Any_Node :: union #shared_nil {
   ^Node,
-  ^Function_Decl,
+  ^Function_Type,
   ^Literal
 }
 
 Any_Decl :: union #shared_nil {
-  ^Function_Decl,
-  ^Struct_Decl,
+  ^Function_Type,
+  ^Struct_Type,
   ^Enum_Decl,
   ^Global_Var_Decl,
 }
@@ -45,19 +45,23 @@ Any_Expr :: union #shared_nil {
   ^Pointer_Ref,
   ^Pointer_Deref,
   ^Array_Index,
-  ^Type_Conv_Expr
+  ^Type_Conv_Expr,
+  ^Dot_Op,
 }
 
 Any_Stmt :: union #shared_nil {
   ^Block,
   ^Return_Stmt,
   ^Update_Stmt,
-  ^Array_Index_Update_Stmt,
   ^If_Stmt,
+  ^Elif_Stmt,
+  ^Else_Stmt,
   ^Local_Var_Decl,
   ^For_Range_Less_Stmt,
   ^Function_Call,
 }
+
+
 
 Pointer_Ref :: struct {
   using node: Node,
@@ -95,6 +99,7 @@ Type_Conv_Expr :: struct {
 }
 
 Expr_List_Node :: struct {
+  using node: Node,
   next: ^Expr_List_Node,
   expr: Any_Expr,
 }
@@ -156,7 +161,16 @@ Return_Stmt :: struct {
 If_Stmt :: struct {
   using stmt: Stmt,
   condition: Any_Expr,
-  body: ^Block,
+  body: ^Block, 
+}
+
+Elif_Stmt :: struct {
+  using if_stmt: If_Stmt
+}
+
+Else_Stmt :: struct {
+  using stmt: Stmt,
+  body: ^Block
 }
 
 For_Range_Less_Stmt :: struct {
@@ -169,15 +183,15 @@ For_Range_Less_Stmt :: struct {
 
 Update_Stmt :: struct {
   using stmt: Stmt,
-  var: ^Literal, 
+  obj: Any_Expr, 
   expr: Any_Expr
 }
 
-Array_Index_Update_Stmt :: struct {
-  using stmt: Stmt,
-  array_index: ^Array_Index,
-  expr: Any_Expr,
+Dot_Op :: struct {
+  par: ^Literal,
+  child: Any_Expr 
 }
+
 
 
 Local_Var_Decl :: struct {
@@ -201,14 +215,14 @@ Raw_Any_Decl :: struct {
   _type: u64,
 }
 
-Function_Decl :: struct {
+Function_Type :: struct {
   using decl: Decl, // this has our function name
   params: Field_List, 
   ret_type: Type,
   body: ^Block
 }
 
-Struct_Decl :: struct {
+Struct_Type :: struct {
   using decl: Decl,
   fields: Field_List,
 }
@@ -228,6 +242,11 @@ Global_Var_Decl :: struct {
 
 get_node_name :: proc(p: ^Parser, node: Node) -> string {
   tkn := p.tokens[node.tkn_index]
+  return string(p.src[tkn.start:tkn.end])
+}
+
+get_token_name :: proc(p: ^Parser, index: Token_Index) -> string {
+  tkn := p.tokens[index]
   return string(p.src[tkn.start:tkn.end])
 }
 
@@ -277,6 +296,7 @@ stmt_append :: proc(block: ^Block, stmt: Any_Stmt) {
     old_tail := transmute(Raw_Any_Stmt)block.tail
     old_tail.ptr.next = stmt
     block.tail = stmt
+
   }
 }
 

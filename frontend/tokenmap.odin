@@ -13,11 +13,13 @@ tmap := map[string]Token_Kind {
   "and" = .Logical_And,
   "or" = .Logical_Or,
   "if" = .If,
+  "elif" = .Elif,
+  "else" = .Else,
   
 
   // MIAU :3
   "int" = .Int,
-  "uint" = .Int,
+  "uint" = .Uint,
   "s8" = .S8,
   "s16" = .S16,
   "s32" = .S32,
