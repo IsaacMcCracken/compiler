@@ -1,6 +1,5 @@
-# This is my compiler for my series on youtube
+# This is my compiler
 
-You can watch me make this whole [thing](https://www.youtube.com/playlist?list=PLIBesc5CYsk8b-L70y4J12KkUItBXs8kZ).
 
 The videos are very boring, but I am learning.
 
@@ -14,8 +13,8 @@ Vector2 :: struct {
 
 Animal_Kind :: enum {
   Dog = 42,
-  Human = 420,
-  Monkey = 69
+  Human,
+  Monkey
 }
 
 Animal :: struct {
@@ -62,8 +61,8 @@ struct Vector2 {
 typedef int Animal_Kind;
 enum {
   Animal_Kind_Dog = 42,
-  Animal_Kind_Human = 420,
-  Animal_Kind_Monkey = 69,
+  Animal_Kind_Human,
+  Animal_Kind_Monkey,
 };
 struct Animal {
   struct Vector2 pos;
