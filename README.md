@@ -1,8 +1,5 @@
 # This is my compiler
 
-
-The videos are very boring, but I am learning.
-
 so far we got this code
 
 ```go
